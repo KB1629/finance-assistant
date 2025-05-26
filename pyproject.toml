@@ -1,0 +1,53 @@
+[tool.poetry]
+name = "finance_assistant"
+version = "0.1.0"
+description = "Multi-Agent Finance Assistant with Voice Interface"
+authors = ["Agent Builder <agent@example.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<=3.13"
+fastapi = "^0.104.1"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+pydantic = "^2.5.0"
+requests = "^2.31.0"
+beautifulsoup4 = "^4.12.2"
+python-dotenv = "^1.0.0"
+pandas = "^2.1.0"
+numpy = "^1.24.0"
+lxml = "^5.1.0"
+openai = "^1.3.0"
+langchain = "^0.1.0"
+langchain-openai = "^0.0.2"
+langchain-core = "^0.1.0"
+sentence-transformers = "^2.2.2"
+faiss-cpu = "^1.7.4"
+langchain-community = "^0.0.10"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+black = "^23.11.0"
+ruff = "^0.1.6"
+pre-commit = "^3.5.0"
+httpx = "^0.25.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short" 

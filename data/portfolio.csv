@@ -1,0 +1,13 @@
+symbol,shares,geo_tag
+AAPL,200,US-Tech
+MSFT,100,US-Tech
+GOOGL,20,US-Tech
+AMZN,30,US-Tech
+TSM,100,Asia-Tech
+BABA,50,Asia-Tech
+BIDU,30,Asia-Tech
+SE,40,Asia-Tech
+JPM,50,US-Finance
+XOM,80,Energy
+PG,60,Consumer
+JNJ,40,Healthcare 

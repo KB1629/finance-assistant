@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ../orchestrator:/app/orchestrator
+    command: uvicorn orchestrator.main:app --host 0.0.0.0 --port 8000 --reload
+    
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data: 
