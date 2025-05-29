@@ -351,22 +351,38 @@ def display_header():
     else:
         st.info("🎉 **Welcome to Finance Assistant!** AI analysis ready. Portfolio analytics loading...")
     
-    # Portfolio overview button for detailed analysis
-    if st.button("📊 Detailed Portfolio Analysis", type="primary", help="Get comprehensive portfolio breakdown"):
-        if PORTFOLIO_AVAILABLE:
-            try:
-                welcome_text = create_welcome_message()
-                st.success(f"📈 **Detailed Analysis:** {welcome_text}")
-                
-                # Only try TTS if voice is available (local deployment)
-                if VOICE_AVAILABLE and VOICE_METHOD == "system":
-                    audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+    # Add dedicated voice briefing button
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        # Portfolio overview button for detailed analysis
+        if st.button("📊 Detailed Portfolio Analysis", type="primary", help="Get comprehensive portfolio breakdown"):
+            if PORTFOLIO_AVAILABLE:
+                try:
+                    welcome_text = create_welcome_message()
+                    st.success(f"📈 **Detailed Analysis:** {welcome_text}")
+                except Exception as e:
+                    st.error(f"Error generating detailed analysis: {e}")
+            else:
+                st.warning("Portfolio analytics temporarily unavailable")
+    
+    with col2:
+        # Dedicated voice briefing button
+        if st.button("🔊 Speak Welcome Briefing", help="Click to hear the welcome briefing"):
+            if PORTFOLIO_AVAILABLE:
+                try:
+                    welcome_text = create_welcome_message()
+                    # Play audio using Edge TTS regardless of environment
+                    audio_data = play_web_compatible_tts(welcome_text, "welcome_button")
                     if audio_data:
                         st.audio(audio_data, format="audio/mp3", autoplay=True)
-            except Exception as e:
-                st.error(f"Error generating detailed analysis: {e}")
-        else:
-            st.warning("Portfolio analytics temporarily unavailable")
+                        st.success("🎙️ Playing welcome briefing...")
+                    else:
+                        st.warning("🔊 Could not generate audio. Please try again.")
+                except Exception as e:
+                    st.error(f"Error generating voice briefing: {e}")
+            else:
+                st.warning("Portfolio analytics temporarily unavailable")
     
     st.markdown("---")
 
