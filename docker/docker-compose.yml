@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Main orchestrator gateway
   orchestrator:
     build:
       context: ..
@@ -9,10 +10,104 @@ services:
       - "8000:8000"
     environment:
       - PYTHONPATH=/app
+      - ALPHAVANTAGE_KEY=${ALPHAVANTAGE_KEY:-demo}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_URL=redis://redis:6379
     volumes:
-      - ../orchestrator:/app/orchestrator
+      - ../:/app
     command: uvicorn orchestrator.main:app --host 0.0.0.0 --port 8000 --reload
-    
+    depends_on:
+      - redis
+      - api-agent
+      - scraper-agent
+      - retriever-agent
+      - analytics-agent
+      - language-agent
+      - voice-agent
+
+  # API Agent - Market data
+  api-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api_agent
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONPATH=/app
+      - ALPHAVANTAGE_KEY=${ALPHAVANTAGE_KEY:-demo}
+    volumes:
+      - ../:/app
+    command: uvicorn agents.api.service:app --host 0.0.0.0 --port 8001 --reload
+
+  # Scraper Agent - SEC filings
+  scraper-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.scraper_agent
+    ports:
+      - "8002:8002"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ../:/app
+    command: uvicorn agents.scraper.service:app --host 0.0.0.0 --port 8002 --reload
+
+  # Retriever Agent - Vector search
+  retriever-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.retriever_agent
+    ports:
+      - "8003:8003"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ../:/app
+    command: uvicorn agents.retriever.service:app --host 0.0.0.0 --port 8003 --reload
+
+  # Analytics Agent - Portfolio analysis
+  analytics-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.analytics_agent
+    ports:
+      - "8004:8004"
+    environment:
+      - PYTHONPATH=/app
+      - ALPHAVANTAGE_KEY=${ALPHAVANTAGE_KEY:-demo}
+    volumes:
+      - ../:/app
+    command: uvicorn agents.analytics.service:app --host 0.0.0.0 --port 8004 --reload
+
+  # Language Agent - LLM processing
+  language-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.language_agent
+    ports:
+      - "8005:8005"
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+    volumes:
+      - ../:/app
+    command: uvicorn agents.language.service:app --host 0.0.0.0 --port 8005 --reload
+
+  # Voice Agent - Speech processing
+  voice-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.voice_agent
+    ports:
+      - "8006:8006"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ../:/app
+    command: uvicorn agents.voice.service:app --host 0.0.0.0 --port 8006 --reload
+
+  # Redis cache
   redis:
     image: redis:7-alpine
     ports:
@@ -20,6 +115,23 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+
+  # Streamlit UI
+  streamlit-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+    volumes:
+      - ../:/app
+    command: streamlit run finance_assistant/streamlit_app/main.py --server.address 0.0.0.0 --server.port 8501
+    depends_on:
+      - orchestrator
 
 volumes:
   redis_data: 

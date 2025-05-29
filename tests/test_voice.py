@@ -27,6 +27,11 @@ class TestVoiceProcessor:
             with patch("agents.voice.speech_processor.sr.Microphone") as mock_microphone:
                 mock_rec_instance = Mock()
                 mock_mic_instance = Mock()
+                
+                # Fix context manager protocol for microphone
+                mock_mic_instance.__enter__ = Mock(return_value=mock_mic_instance)
+                mock_mic_instance.__exit__ = Mock(return_value=None)
+                
                 mock_recognizer.return_value = mock_rec_instance
                 mock_microphone.return_value = mock_mic_instance
                 yield mock_rec_instance, mock_mic_instance

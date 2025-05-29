@@ -1,0 +1,37 @@
+# Base Dockerfile for all agent microservices
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libffi-dev \
+    libssl-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry
+
+# Copy dependency files
+COPY pyproject.toml poetry.lock ./
+
+# Configure Poetry
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-dev --no-root
+
+# Copy application code
+COPY . .
+
+# Install the application
+RUN poetry install --no-dev
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Default command (to be overridden by specific services)
+CMD ["uvicorn", "--host", "0.0.0.0", "--port", "8000"] 

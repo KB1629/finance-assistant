@@ -29,6 +29,13 @@ crewai = "^0.121.0"
 openai-whisper = "^20240930"
 speechrecognition = "^3.14.3"
 pydub = "^0.25.1"
+google-generativeai = "^0.8.5"
+pywin32 = "^310"
+pyttsx3 = "^2.98"
+edge-tts = "^7.0.2"
+pygame = "^2.6.1"
+gtts = "^2.5.4"
+pyaudio = "^0.2.14"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

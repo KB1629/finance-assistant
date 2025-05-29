@@ -105,6 +105,8 @@ class PortfolioAnalytics:
             {"symbol": "BABA", "shares": 50, "geo_tag": "Asia-Tech"},
             {"symbol": "BIDU", "shares": 30, "geo_tag": "Asia-Tech"},
             {"symbol": "SE", "shares": 40, "geo_tag": "Asia-Tech"},
+            {"symbol": "9988.HK", "shares": 200, "geo_tag": "Asia-Tech"},
+            {"symbol": "3690.HK", "shares": 300, "geo_tag": "Asia-Tech"},
         ]
         
         # US tech stocks
@@ -113,18 +115,35 @@ class PortfolioAnalytics:
             {"symbol": "MSFT", "shares": 100, "geo_tag": "US-Tech"},
             {"symbol": "GOOGL", "shares": 20, "geo_tag": "US-Tech"},
             {"symbol": "AMZN", "shares": 30, "geo_tag": "US-Tech"},
+            {"symbol": "META", "shares": 50, "geo_tag": "US-Tech"},
+            {"symbol": "NVDA", "shares": 80, "geo_tag": "US-Tech"},
+            {"symbol": "TSLA", "shares": 40, "geo_tag": "US-Tech"},
+        ]
+        
+        # Indian market stocks
+        indian_stocks = [
+            {"symbol": "ITC.BSE", "shares": 100, "geo_tag": "India"},
+            {"symbol": "TCS.BSE", "shares": 25, "geo_tag": "India"},
+            {"symbol": "RELIANCE.BSE", "shares": 35, "geo_tag": "India"},
+            {"symbol": "HDFCBANK.BSE", "shares": 75, "geo_tag": "India"},
+            {"symbol": "INFY.BSE", "shares": 60, "geo_tag": "India"},
         ]
         
         # Other sectors
         other = [
             {"symbol": "JPM", "shares": 50, "geo_tag": "US-Finance"},
+            {"symbol": "BAC", "shares": 120, "geo_tag": "US-Finance"},
+            {"symbol": "V", "shares": 45, "geo_tag": "US-Finance"},
             {"symbol": "XOM", "shares": 80, "geo_tag": "Energy"},
-            {"symbol": "PG", "shares": 60, "geo_tag": "Consumer"},
+            {"symbol": "CVX", "shares": 60, "geo_tag": "Energy"},
             {"symbol": "JNJ", "shares": 40, "geo_tag": "Healthcare"},
+            {"symbol": "PFE", "shares": 100, "geo_tag": "Healthcare"},
+            {"symbol": "PG", "shares": 60, "geo_tag": "Consumer"},
+            {"symbol": "KO", "shares": 90, "geo_tag": "Consumer"},
         ]
         
         # Create DataFrame
-        self.portfolio_df = pd.DataFrame(asian_tech + us_tech + other)
+        self.portfolio_df = pd.DataFrame(asian_tech + us_tech + indian_stocks + other)
         
         # Save to CSV
         os.makedirs(self.portfolio_file.parent, exist_ok=True)
@@ -246,25 +265,46 @@ class PortfolioAnalytics:
                         })
                 except Exception as e:
                     logger.debug(f"No earnings surprise for {symbol}: {e}")
-            
+                    
             # Sort surprises by absolute magnitude
             earnings_surprises.sort(key=lambda x: abs(x['surprise_percentage']), reverse=True)
+                    
+            # Get positions data (all individual stocks)
+            positions_data = []
+            for _, row in portfolio.iterrows():
+                position = {
+                    "symbol": row['symbol'],
+                    "shares": row['shares'],
+                    "price": row['price'],
+                    "market_value": row['market_value'],
+                    "geo_tag": row['geo_tag']
+                }
+                
+                # Try to get previous day's price if available
+                if self.previous_data and 'positions' in self.previous_data:
+                    for prev_pos in self.previous_data['positions']:
+                        if prev_pos['symbol'] == row['symbol']:
+                            position['previous_price'] = prev_pos['price']
+                            break
+                
+                positions_data.append(position)
             
-            # Prepare results
+            # Create results dictionary
             results = {
-                "date": self.date_str,
                 "total_value": total_value,
                 "positions_count": len(portfolio),
+                "date": self.date_str,
                 "geo_allocation": geo_analysis_dict,
                 "asia_tech": {
                     "percentage": asia_tech_pct,
-                    "value": asia_tech_value,
+                    "market_value": asia_tech_value,
                     "change_from_previous": asia_tech_change
                 },
-                "earnings_surprises": earnings_surprises
+                "earnings_surprises": earnings_surprises,
+                "positions": positions_data  # Add complete positions data
             }
             
-            # Cache results
+            # Save to cache
             self._save_cached_results(results)
             
             return results
@@ -272,7 +312,7 @@ class PortfolioAnalytics:
         except Exception as e:
             logger.error(f"Error calculating portfolio value: {e}")
             return {
-                "error": str(e),
+                "error": f"Analytics error: {e}",
                 "date": self.date_str
             }
     

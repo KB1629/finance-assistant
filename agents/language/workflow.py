@@ -7,13 +7,13 @@ from typing import Dict, Any, List, Optional, TypedDict
 from datetime import datetime
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import Graph, END
 from langgraph.graph.message import MessageGraph
 
 from agents.retriever.vector_store import query as vector_query
 from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
+from agents.language.gemini_client import chat_completion
 
 # Configure logging
 logging.basicConfig(
@@ -36,26 +36,25 @@ class WorkflowState(TypedDict):
 class FinanceLanguageAgent:
     """Language agent for synthesizing finance briefs using LangGraph."""
 
-    def __init__(self, llm_provider: str = "openai", model_name: str = "gpt-4o-mini"):
+    def __init__(self, llm_provider: str = "gemini", model_name: str = "gemini-1.5-flash"):
         """Initialize the language agent.
         
         Args:
-            llm_provider: LLM provider to use
+            llm_provider: LLM provider to use (gemini or openai)
             model_name: Model name
         """
         self.llm_provider = llm_provider
         self.model_name = model_name
         
-        # Initialize LLM
-        if llm_provider == "openai":
+        # Check API key availability
+        if llm_provider == "gemini":
+            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                raise ValueError("GEMINI_API_KEY environment variable is required")
+        elif llm_provider == "openai":
             api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
                 raise ValueError("OPENAI_API_KEY environment variable is required")
-            self.llm = ChatOpenAI(
-                model=model_name,
-                temperature=0.1,
-                max_tokens=500
-            )
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
         
@@ -152,8 +151,7 @@ class FinanceLanguageAgent:
                         analytics_data = msg.content.replace("ANALYTICS_RESULTS: ", "")
             
             # Create synthesis prompt
-            prompt = ChatPromptTemplate.from_template("""
-You are a professional financial advisor providing a morning market brief. 
+            prompt_text = f"""You are a professional financial advisor providing a morning market brief. 
 Synthesize the following information into a clear, concise response (≤60 words):
 
 Query: {query}
@@ -163,18 +161,19 @@ Portfolio Analytics: {analytics_data}
 Relevant Market Information: {retrieval_data}
 
 Provide a professional, actionable summary that directly answers the query.
-Focus on key numbers, percentages, and actionable insights.
-""")
+Focus on key numbers, percentages, and actionable insights."""
             
-            # Generate response using LLM
-            messages = prompt.format_messages(
-                query=query,
-                analytics_data=analytics_data,
-                retrieval_data=retrieval_data
-            )
-            
-            response = self.llm.invoke(messages)
-            final_response = response.content
+            # Generate response using appropriate LLM
+            if self.llm_provider == "gemini":
+                messages = [{"role": "user", "content": prompt_text}]
+                final_response = chat_completion(messages)
+            else:  # OpenAI fallback
+                from langchain_openai import ChatOpenAI
+                llm = ChatOpenAI(model=self.model_name, temperature=0.1, max_tokens=500)
+                prompt = ChatPromptTemplate.from_template(prompt_text)
+                messages = prompt.format_messages()
+                response = llm.invoke(messages)
+                final_response = response.content
             
             logger.info("Generated final synthesis response")
             

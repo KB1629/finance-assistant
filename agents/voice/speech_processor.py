@@ -9,8 +9,13 @@ from typing import Optional, Union, BinaryIO
 
 import whisper
 import speech_recognition as sr
-from pydub import AudioSegment
-from pydub.playback import play
+try:
+    from pydub import AudioSegment
+    from pydub.playback import play
+    PYDUB_AVAILABLE = True
+except ImportError:
+    PYDUB_AVAILABLE = False
+    logger.warning("pydub not available - some audio features may be limited")
 
 # Configure logging
 logging.basicConfig(
@@ -40,18 +45,24 @@ class VoiceProcessor:
             logger.error(f"Failed to load Whisper model: {e}")
             raise
         
-        # Initialize speech recognition
-        self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
+        # Initialize speech recognition (optional)
+        self.recognizer = None
+        self.microphone = None
         
-        # Adjust for ambient noise
         try:
+            self.recognizer = sr.Recognizer()
+            self.microphone = sr.Microphone()
+            
+            # Adjust for ambient noise
             with self.microphone as source:
                 logger.info("Adjusting for ambient noise...")
                 self.recognizer.adjust_for_ambient_noise(source, duration=1)
                 logger.info("Microphone calibration complete")
+        except ImportError:
+            logger.warning("Speech recognition not available - PyAudio not installed")
         except Exception as e:
             logger.warning(f"Could not calibrate microphone: {e}")
+            # Don't fail initialization - TTS can still work
 
     def speech_to_text_whisper(self, audio_file: Union[str, Path, BinaryIO]) -> str:
         """Convert speech to text using Whisper.
@@ -94,6 +105,10 @@ class VoiceProcessor:
             Transcribed text
         """
         try:
+            # Check if microphone is available
+            if self.microphone is None or self.recognizer is None:
+                return "Error: Microphone not available. Please check that PyAudio is installed and your microphone is connected."
+            
             logger.info("Listening for speech...")
             
             with self.microphone as source:
@@ -106,7 +121,13 @@ class VoiceProcessor:
             try:
                 # Convert audio to wav format for Whisper
                 audio_data = io.BytesIO(audio.get_wav_data())
-                return self.speech_to_text_whisper(audio_data)
+                result = self.speech_to_text_whisper(audio_data)
+                
+                # Check if Whisper returned an error
+                if result.startswith("Error:"):
+                    raise Exception(result)
+                    
+                return result
             except Exception as e:
                 logger.warning(f"Whisper failed, falling back to Google: {e}")
                 
@@ -127,38 +148,120 @@ class VoiceProcessor:
             return f"Error: {str(e)}"
 
     def text_to_speech_simple(self, text: str, output_file: Optional[str] = None) -> Optional[str]:
-        """Convert text to speech using simple TTS.
-        
-        Note: This is a placeholder for TTS functionality.
-        In a full implementation, you would integrate with:
-        - Piper TTS (as mentioned in the plan)
-        - Windows SAPI
-        - Cloud TTS services
+        """Convert text to speech using Windows SAPI or fallback TTS.
         
         Args:
             text: Text to convert to speech
             output_file: Optional output file path
             
         Returns:
-            Path to generated audio file if saved, None otherwise
+            Success message or None
         """
         try:
             logger.info(f"TTS request: '{text[:50]}...'")
             
-            # For now, we'll create a simple placeholder
-            # In production, integrate with Piper TTS or another TTS engine
+            # Limit text length for TTS
+            if len(text) > 500:
+                text = text[:500] + "..."
             
-            if len(text) > 200:
-                text = text[:200] + "..."
+            # Try Windows SAPI first (available on Windows desktop)
+            try:
+                import win32com.client
+                speaker = win32com.client.Dispatch("SAPI.SpVoice")
+                speaker.Speak(text)
+                logger.info("TTS: Successfully played audio using Windows SAPI")
+                return "Speech played successfully"
+            except ImportError:
+                logger.warning("Windows SAPI not available (pywin32 not installed)")
+            except Exception as e:
+                logger.warning(f"Windows SAPI failed (may not work in web environment): {e}")
+            
+            # Try edge-tts (Microsoft Edge TTS - works better in web contexts)
+            try:
+                import edge_tts
+                import asyncio
+                import tempfile
+                import subprocess
                 
-            logger.info("TTS processing completed (placeholder implementation)")
+                async def _speak():
+                    communicate = edge_tts.Communicate(text, "en-US-AriaNeural")
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                        tmp_path = tmp_file.name
+                    
+                    await communicate.save(tmp_path)
+                    
+                    # Try to play with system default player
+                    if os.name == 'nt':  # Windows
+                        os.startfile(tmp_path)
+                    elif os.name == 'posix':  # Linux/Mac
+                        subprocess.call(['xdg-open', tmp_path])
+                    
+                    return tmp_path
+                
+                # Run async function
+                if hasattr(asyncio, 'run'):
+                    asyncio.run(_speak())
+                    logger.info("TTS: Successfully generated audio using Edge TTS")
+                    return "Speech played successfully"
+                    
+            except ImportError:
+                logger.warning("edge-tts not available")
+            except Exception as e:
+                logger.warning(f"Edge TTS failed: {e}")
             
-            # Return a message for now
-            return f"TTS would generate audio for: '{text}'"
+            # Try gTTS as backup (requires internet)
+            try:
+                from gtts import gTTS
+                import pygame
+                
+                # Create temporary file for audio
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                    tmp_path = tmp_file.name
+                
+                # Generate speech
+                tts = gTTS(text=text, lang='en', slow=False)
+                tts.save(tmp_path)
+                
+                # Try pygame for playback
+                pygame.mixer.init()
+                pygame.mixer.music.load(tmp_path)
+                pygame.mixer.music.play()
+                
+                # Wait for playback to complete
+                while pygame.mixer.music.get_busy():
+                    pygame.time.wait(100)
+                
+                pygame.mixer.quit()
+                os.unlink(tmp_path)  # Clean up
+                
+                logger.info("TTS: Successfully played audio using gTTS")
+                return "Speech played successfully"
+                
+            except ImportError:
+                logger.warning("gTTS/pygame not available")
+            except Exception as e:
+                logger.warning(f"gTTS failed: {e}")
+            
+            # Try pyttsx3 (cross-platform TTS)
+            try:
+                import pyttsx3
+                engine = pyttsx3.init()
+                engine.say(text)
+                engine.runAndWait()
+                logger.info("TTS: Successfully played audio using pyttsx3")
+                return "Speech played successfully"
+            except ImportError:
+                logger.warning("pyttsx3 not available")
+            except Exception as e:
+                logger.warning(f"pyttsx3 failed: {e}")
+            
+            # Final fallback - explain limitations
+            logger.info("TTS: All speech engines failed - web environment limitations")
+            return "TTS engines not available in web environment - text-to-speech works better in desktop applications"
             
         except Exception as e:
             logger.error(f"Error in TTS: {e}")
-            return None
+            return f"TTS Error: {str(e)}"
 
     def process_audio_file(self, file_path: Union[str, Path]) -> str:
         """Process an uploaded audio file.
@@ -182,16 +285,24 @@ class VoiceProcessor:
             
             # Convert to WAV if needed for Whisper
             if file_path.suffix.lower() != '.wav':
-                logger.info("Converting audio format for processing...")
-                audio = AudioSegment.from_file(str(file_path))
+                if not PYDUB_AVAILABLE:
+                    logger.warning("Audio conversion not available - FFmpeg/pydub not installed")
+                    return "Error: Audio conversion requires FFmpeg. Please install FFmpeg or upload WAV files."
                 
-                # Create temporary WAV file
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-                    temp_path = temp_file.name
-                
-                audio.export(temp_path, format="wav")
-                result = self.speech_to_text_whisper(temp_path)
-                os.unlink(temp_path)  # Clean up
+                try:
+                    logger.info("Converting audio format for processing...")
+                    audio = AudioSegment.from_file(str(file_path))
+                    
+                    # Create temporary WAV file
+                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                        temp_path = temp_file.name
+                    
+                    audio.export(temp_path, format="wav")
+                    result = self.speech_to_text_whisper(temp_path)
+                    os.unlink(temp_path)  # Clean up
+                except Exception as e:
+                    logger.error(f"Audio conversion failed: {e}")
+                    return f"Error: Audio conversion failed. Please ensure FFmpeg is installed or upload WAV files. Error: {e}"
                 
                 return result
             else:

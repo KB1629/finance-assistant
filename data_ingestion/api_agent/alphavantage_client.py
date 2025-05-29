@@ -8,8 +8,18 @@ from typing import Dict, Any, Optional, List, Union
 import requests
 import pandas as pd
 from pathlib import Path
+import logging
 
 from data_ingestion.config import ALPHAVANTAGE_API_KEY, API_CACHE_DIR
+from data_ingestion.api_agent.demo_fallback import (
+    create_demo_time_series_response,
+    create_demo_earnings_response,
+    is_demo_api_key,
+    should_use_fallback,
+    should_use_fallback_for_response
+)
+
+logger = logging.getLogger("alphavantage_client")
 
 
 class AlphaVantageClient:
@@ -65,6 +75,18 @@ class AlphaVantageClient:
                 if time.time() - cache_time < 86400:  # 24 hours in seconds
                     return cached_data
         
+        # For demo API key, use fallback data directly to prevent rate limit issues
+        if is_demo_api_key(self.api_key):
+            logger.info(f"Using demo API key - using fallback for {symbol} {function}")
+            try:
+                fallback_data = self._get_fallback_data(function, symbol)
+                # Save to cache
+                with open(cache_path, 'w') as f:
+                    json.dump(fallback_data, f)
+                return fallback_data
+            except Exception as e:
+                logger.warning(f"Fallback data failed: {e}")
+        
         # Fetch fresh data from API
         request_params = {
             "function": function,
@@ -73,17 +95,31 @@ class AlphaVantageClient:
             **params
         }
         
-        response = requests.get(self.BASE_URL, params=request_params)
-        
-        if response.status_code != 200:
-            raise Exception(f"API request failed with status {response.status_code}: {response.text}")
-        
         try:
+            response = requests.get(self.BASE_URL, params=request_params, timeout=10)
+            
+            if response.status_code != 200:
+                error_msg = f"API request failed with status {response.status_code}: {response.text}"
+                if should_use_fallback(error_msg):
+                    logger.warning(f"API failed, using fallback: {error_msg}")
+                    return self._get_fallback_data(function, symbol)
+                raise Exception(error_msg)
+            
             data = response.json()
             
-            # Check for API error messages
-            if "Error Message" in data:
-                raise Exception(f"API Error: {data['Error Message']}")
+            # Check for API error messages or rate limits
+            if "Error Message" in data or "Note" in data:
+                error_msg = data.get("Error Message", data.get("Note", "Unknown API error"))
+                if should_use_fallback(error_msg):
+                    logger.warning(f"API error, using fallback: {error_msg}")
+                    return self._get_fallback_data(function, symbol)
+                raise Exception(f"API Error: {error_msg}")
+            
+            # Check if response structure indicates we should use fallback
+            if should_use_fallback_for_response(data):
+                info_msg = data.get("Information", "API response missing expected data")
+                logger.warning(f"API response incomplete, using fallback: {info_msg}")
+                return self._get_fallback_data(function, symbol)
             
             # Add timestamp for cache freshness checking
             data["_cache_timestamp"] = time.time()
@@ -93,8 +129,27 @@ class AlphaVantageClient:
                 json.dump(data, f)
             
             return data
-        except json.JSONDecodeError:
-            raise Exception(f"Invalid JSON response: {response.text}")
+            
+        except (requests.RequestException, json.JSONDecodeError) as e:
+            logger.warning(f"API request failed ({e}), using fallback data")
+            return self._get_fallback_data(function, symbol)
+
+    def _get_fallback_data(self, function: str, symbol: str) -> Dict[str, Any]:
+        """Get fallback data when API is unavailable.
+        
+        Args:
+            function: AlphaVantage function name
+            symbol: Stock symbol
+            
+        Returns:
+            Mock API response
+        """
+        if function == "TIME_SERIES_DAILY_ADJUSTED":
+            return create_demo_time_series_response(symbol)
+        elif function == "EARNINGS":
+            return create_demo_earnings_response(symbol)
+        else:
+            raise Exception(f"No fallback data available for function: {function}")
 
     def get_daily_prices(self, symbol: str) -> pd.DataFrame:
         """Get daily adjusted price data for a symbol.

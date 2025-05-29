@@ -1,35 +1,35 @@
-"""Tests for the Language Agent (LangGraph workflow)."""
+"""Tests for the Language Agent (LangGraph workflow) with Gemini."""
 
 import pytest
 import os
 from unittest.mock import Mock, patch, MagicMock
 
-# Skip tests if OpenAI API key is not available
+# Skip tests if Gemini API key is not available
 @pytest.fixture(autouse=True)
-def mock_openai_api():
-    """Mock OpenAI API calls for testing."""
-    with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-        with patch("agents.language.workflow.ChatOpenAI") as mock_llm:
+def mock_gemini_api():
+    """Mock Gemini API calls for testing."""
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}):
+        with patch("agents.language.gemini_client.genai.GenerativeModel") as mock_model:
             mock_response = Mock()
-            mock_response.content = "Test AI response with portfolio insights"
-            mock_llm.return_value.invoke.return_value = mock_response
-            yield mock_llm
+            mock_response.text = "Test AI response with portfolio insights"
+            mock_model.return_value.generate_content.return_value = mock_response
+            yield mock_model
 
 
 class TestLanguageAgent:
     """Test cases for the Language Agent."""
     
-    def test_language_agent_initialization(self, mock_openai_api):
+    def test_language_agent_initialization(self, mock_gemini_api):
         """Test Language Agent can be initialized."""
         from agents.language.workflow import FinanceLanguageAgent
         
         agent = FinanceLanguageAgent()
         
-        assert agent.llm_provider == "openai"
-        assert agent.model_name == "gpt-4o-mini"
+        assert agent.llm_provider == "gemini"
+        assert agent.model_name == "gemini-1.5-flash"
         assert agent.workflow is not None
 
-    def test_process_query_integration(self, mock_openai_api):
+    def test_process_query_integration(self, mock_gemini_api):
         """Test complete query processing workflow."""
         from agents.language.workflow import process_finance_query
         
@@ -62,7 +62,7 @@ class TestLanguageAgent:
                     assert len(response) > 0
                     assert "error" not in response.lower() or "Error" not in response
 
-    def test_workflow_nodes_execution(self, mock_openai_api):
+    def test_workflow_nodes_execution(self, mock_gemini_api):
         """Test individual workflow nodes."""
         from agents.language.workflow import FinanceLanguageAgent
         from langchain_core.messages import HumanMessage, AIMessage
@@ -82,7 +82,7 @@ class TestLanguageAgent:
             assert isinstance(result[1], AIMessage)
             assert "RETRIEVAL_RESULTS:" in result[1].content
 
-    def test_analytics_node(self, mock_openai_api):
+    def test_analytics_node(self, mock_gemini_api):
         """Test analytics node functionality."""
         from agents.language.workflow import FinanceLanguageAgent
         from langchain_core.messages import HumanMessage
@@ -101,7 +101,7 @@ class TestLanguageAgent:
                 assert len(result) == 2
                 assert "ANALYTICS_RESULTS:" in result[1].content
 
-    def test_error_handling(self, mock_openai_api):
+    def test_error_handling(self, mock_gemini_api):
         """Test error handling in workflow."""
         from agents.language.workflow import FinanceLanguageAgent
         from langchain_core.messages import HumanMessage
@@ -115,7 +115,7 @@ class TestLanguageAgent:
             
             assert "Error in retrieval" in result[1].content
 
-    def test_format_retrieval_results(self, mock_openai_api):
+    def test_format_retrieval_results(self, mock_gemini_api):
         """Test retrieval results formatting."""
         from agents.language.workflow import FinanceLanguageAgent
         
@@ -136,7 +136,7 @@ class TestLanguageAgent:
         formatted_empty = agent._format_retrieval_results([])
         assert "No relevant documents found" in formatted_empty
 
-    def test_format_analytics_results(self, mock_openai_api):
+    def test_format_analytics_results(self, mock_gemini_api):
         """Test analytics results formatting."""
         from agents.language.workflow import FinanceLanguageAgent
         
@@ -160,7 +160,7 @@ class TestLanguageAgent:
         formatted_error = agent._format_analytics_results(error_data, risk_data)
         assert "Portfolio data unavailable" in formatted_error
 
-    def test_get_language_agent_singleton(self, mock_openai_api):
+    def test_get_language_agent_singleton(self, mock_gemini_api):
         """Test singleton pattern for language agent."""
         from agents.language.workflow import get_language_agent
         
@@ -169,15 +169,15 @@ class TestLanguageAgent:
         
         assert agent1 is agent2  # Same instance
 
-    def test_workflow_stats(self, mock_openai_api):
+    def test_workflow_stats(self, mock_gemini_api):
         """Test workflow statistics."""
         from agents.language.workflow import FinanceLanguageAgent
         
         agent = FinanceLanguageAgent()
         stats = agent.get_workflow_stats()
         
-        assert stats["llm_provider"] == "openai"
-        assert stats["model_name"] == "gpt-4o-mini"
+        assert stats["llm_provider"] == "gemini"
+        assert stats["model_name"] == "gemini-1.5-flash"
         assert "retriever" in stats["workflow_nodes"]
         assert "analytics" in stats["workflow_nodes"]
         assert "synthesize" in stats["workflow_nodes"]
@@ -189,30 +189,28 @@ class TestLanguageAgent:
         with pytest.raises(ValueError, match="Unsupported LLM provider"):
             FinanceLanguageAgent(llm_provider="invalid_provider")
 
-    def test_missing_openai_key(self):
-        """Test initialization without OpenAI API key."""
+    def test_missing_gemini_key(self):
+        """Test initialization without Gemini API key."""
         from agents.language.workflow import FinanceLanguageAgent
         
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ValueError, match="OPENAI_API_KEY environment variable is required"):
+            with pytest.raises(ValueError, match="GEMINI_API_KEY environment variable is required"):
                 FinanceLanguageAgent()
 
-
-class TestLangGraphIntegration:
-    """Test LangGraph integration specifically."""
-    
-    def test_workflow_compilation(self, mock_openai_api):
-        """Test that workflow compiles correctly."""
+    def test_workflow_compilation(self, mock_gemini_api):
+        """Test that the workflow compiles successfully."""
         from agents.language.workflow import FinanceLanguageAgent
         
         agent = FinanceLanguageAgent()
         
-        # Workflow should be compiled and ready
+        # Check that workflow is compiled and has expected structure
         assert agent.workflow is not None
+        
+        # Basic workflow introspection
         assert hasattr(agent.workflow, 'invoke')
 
-    def test_message_graph_flow(self, mock_openai_api):
-        """Test message flow through the graph."""
+    def test_message_graph_flow(self, mock_gemini_api):
+        """Test the message graph workflow execution."""
         from agents.language.workflow import FinanceLanguageAgent
         from langchain_core.messages import HumanMessage
         
@@ -221,16 +219,22 @@ class TestLangGraphIntegration:
         with patch("agents.language.workflow.vector_query") as mock_vector:
             with patch("agents.language.workflow.get_portfolio_value") as mock_portfolio:
                 with patch("agents.language.workflow.get_risk_exposure") as mock_risk:
-                    
-                    mock_vector.return_value = [({"text": "test", "source": "test.txt"}, 0.9)]
-                    mock_portfolio.return_value = {"total_value": 26500.0}
-                    mock_risk.return_value = {"risk_level": "moderate"}
-                    
-                    # Should not raise exception
-                    result = agent.workflow.invoke([HumanMessage(content="test query")])
-                    
-                    assert isinstance(result, list)
-                    assert len(result) >= 1
+                    with patch("agents.language.workflow.chat_completion") as mock_chat:
+                        
+                        # Setup mocks
+                        mock_vector.return_value = [
+                            ({"text": "Test document", "source": "test.txt"}, 0.9)
+                        ]
+                        mock_portfolio.return_value = {"total_value": 26500.0}
+                        mock_risk.return_value = {"risk_level": "moderate"}
+                        mock_chat.return_value = "Portfolio: $26,500. Asia-Tech exposure is moderate."
+                        
+                        # Test workflow execution
+                        query = "What's my portfolio status?"
+                        response = agent.process_query(query)
+                        
+                        assert isinstance(response, str)
+                        assert len(response) > 0
 
 
 if __name__ == "__main__":

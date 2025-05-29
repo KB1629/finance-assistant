@@ -17,13 +17,14 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
+import base64
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from agents.language.workflow import process_finance_query
-from agents.voice.speech_processor import transcribe_audio, synthesize_speech, get_voice_processor
+from agents.voice.speech_processor import transcribe_audio, synthesize_speech, get_voice_processor, record_and_transcribe
 from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
 from agents.retriever.vector_store import query as vector_query
 
@@ -48,22 +49,175 @@ def initialize_session_state():
         st.session_state.chat_history = []
     if 'voice_enabled' not in st.session_state:
         st.session_state.voice_enabled = True
-    if 'openai_api_key' not in st.session_state:
-        st.session_state.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+    if 'gemini_api_key' not in st.session_state:
+        st.session_state.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+
+def create_welcome_message():
+    """Generate a welcome message with portfolio insights."""
+    try:
+        portfolio_data = get_portfolio_value()
+        if "error" not in portfolio_data:
+            total_value = portfolio_data.get('total_value', 0)
+            asia_tech = portfolio_data.get('asia_tech', {})
+            asia_pct = asia_tech.get('percentage', 0)
+            holdings_count = portfolio_data.get('positions_count', 0)
+            
+            # Determine if Asia tech exposure is high/low
+            if asia_pct > 15:
+                exposure_status = "high"
+            elif asia_pct < 5:
+                exposure_status = "low"  
+            else:
+                exposure_status = "moderate"
+            
+            welcome_msg = f"""Welcome to your Finance Assistant! 
+            Your portfolio is worth ${total_value:,.0f} across {holdings_count} positions. 
+            Your Asia tech exposure is {asia_pct:.1f}%, which is {exposure_status}. 
+            I'm ready to help with your financial analysis."""
+            
+            return welcome_msg
+        else:
+            return "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
+    except Exception:
+        return "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
+
+def play_web_compatible_tts(text: str, element_id: str = "tts_audio"):
+    """Play TTS using simple, reliable method."""
+    
+    # Clean text
+    clean_text = text.replace('"', '\\"').replace("'", "\\'").replace('\n', ' ').replace('\r', ' ')
+    clean_text = ' '.join(clean_text.split())
+    
+    # Limit text length
+    if len(clean_text) > 500:
+        clean_text = clean_text[:500] + "..."
+    
+    # Try Edge TTS first
+    try:
+        import tempfile
+        import base64
+        import edge_tts
+        import asyncio
+        
+        async def generate_audio():
+            communicate = edge_tts.Communicate(clean_text, "en-US-AriaNeural")
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                tmp_path = tmp_file.name
+            await communicate.save(tmp_path)
+            return tmp_path
+        
+        # Generate audio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        audio_path = loop.run_until_complete(generate_audio())
+        
+        # Read audio file
+        with open(audio_path, 'rb') as f:
+            audio_data = f.read()
+        
+        # Clean up
+        os.unlink(audio_path)
+        
+        logger.info("Edge TTS audio generated successfully")
+        return audio_data
+        
+    except Exception as e:
+        logger.warning(f"Edge TTS failed: {e}")
+        return None
+
+def display_welcome_greeting():
+    """Display and play welcome greeting - now manual only."""
+    try:
+        welcome_text = create_welcome_message()
+        
+        # Show welcome message
+        st.success(f"🎉 {welcome_text}")
+        
+        # Play welcome audio without showing any media controls
+        try:
+            audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+            if audio_data:
+                # Use HTML to create a hidden audio element that autoplays
+                audio_bytes = base64.b64encode(audio_data).decode()
+                audio_html = f"""
+                <audio autoplay style="display:none;">
+                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                </audio>
+                <div>🔊 Playing welcome briefing...</div>
+                """
+                st.components.v1.html(audio_html, height=30)
+            else:
+                st.warning("🔊 Audio generation failed")
+                st.info("💡 **Text version:** " + welcome_text)
+        except Exception as e:
+            logger.warning(f"Welcome TTS failed: {e}")
+            st.warning(f"🔊 Welcome audio error: {e}")
+            st.info("💡 **Text version:** " + welcome_text)
+            
+    except Exception as e:
+        logger.error(f"Welcome greeting error: {e}")
+        st.error(f"Welcome greeting error: {e}")
+        # Fallback welcome message
+        fallback_msg = "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
+        st.success(f"🎉 {fallback_msg}")
+        try:
+            audio_data = play_web_compatible_tts(fallback_msg, "welcome_fallback")
+            if audio_data:
+                # Use HTML to create a hidden audio element that autoplays
+                audio_bytes = base64.b64encode(audio_data).decode()
+                audio_html = f"""
+                <audio autoplay style="display:none;">
+                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                </audio>
+                """
+                st.components.v1.html(audio_html, height=0)
+        except:
+            pass
 
 def display_header():
     """Display the application header."""
+    # Title
     st.title("🎤 Finance Assistant")
-    st.markdown("**Voice-Enabled Morning Market Brief**")
+    st.markdown("**Voice-Enabled Morning Market Brief - Speak Clearly for Best Results**")
+    
+    # Welcome briefing button directly below title - much closer
+    if st.button("🔊 Welcome Briefing", type="secondary", help="Portfolio briefing with voice"):
+        try:
+            welcome_text = create_welcome_message()
+            st.success(f"🎉 {welcome_text}")
+            
+            # Auto-generate and play audio without showing controls
+            audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+            if audio_data:
+                # Use HTML to create a hidden audio element that autoplays
+                audio_bytes = base64.b64encode(audio_data).decode()
+                audio_html = f"""
+                <audio autoplay style="display:none;">
+                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                </audio>
+                <div>🔊 Playing welcome briefing...</div>
+                """
+                st.components.v1.html(audio_html, height=30)
+            else:
+                st.warning("🔊 Audio generation failed")
+        except Exception as e:
+            st.error(f"Welcome briefing error: {e}")
     
     # Status indicators
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.session_state.openai_api_key:
-            st.success("✅ OpenAI Connected")
+        if st.session_state.gemini_api_key:
+            st.success("✅ Gemini AI Connected")
         else:
-            st.error("❌ OpenAI API Key Required")
+            st.error("❌ Gemini API Key Required")
     
     with col2:
         try:
@@ -73,7 +227,8 @@ def display_header():
             st.warning("⚠️ Voice Processing Limited")
     
     with col3:
-        st.info(f"🕐 {datetime.now().strftime('%H:%M %Z')}")
+        # Show time with seconds to indicate it's working
+        st.info(f"🕐 {datetime.now().strftime('%H:%M:%S')}")
 
 def display_sidebar():
     """Display the application sidebar."""
@@ -82,14 +237,14 @@ def display_sidebar():
         
         # API Key input
         api_key = st.text_input(
-            "OpenAI API Key",
-            value=st.session_state.openai_api_key,
+            "Gemini API Key",
+            value=st.session_state.gemini_api_key,
             type="password",
             help="Required for AI processing"
         )
-        if api_key != st.session_state.openai_api_key:
-            st.session_state.openai_api_key = api_key
-            os.environ["OPENAI_API_KEY"] = api_key
+        if api_key != st.session_state.gemini_api_key:
+            st.session_state.gemini_api_key = api_key
+            os.environ["GEMINI_API_KEY"] = api_key
         
         st.divider()
         
@@ -112,11 +267,20 @@ def display_sidebar():
                     f"${portfolio_data.get('total_value', 0):,.0f}"
                 )
                 asia_tech = portfolio_data.get('asia_tech', {})
-                st.metric(
-                    "Asia-Tech Exposure",
-                    f"{asia_tech.get('percentage', 0):.1f}%",
-                    delta=f"{asia_tech.get('change_from_previous', 0):.1f}%"
-                )
+                asia_pct = asia_tech.get('percentage', 0)
+                asia_change = asia_tech.get('change_from_previous', 0)
+                # Only show delta if change_from_previous is not None
+                if asia_change is not None:
+                    st.metric(
+                        "Asia-Tech Exposure",
+                        f"{asia_pct:.1f}%",
+                        delta=f"{asia_change:.1f}%"
+                    )
+                else:
+                    st.metric(
+                        "Asia-Tech Exposure",
+                        f"{asia_pct:.1f}%"
+                    )
             else:
                 st.error("Portfolio data unavailable")
         except Exception as e:
@@ -129,6 +293,7 @@ def display_sidebar():
         st.text("Sprint 3: Voice & UI")
         st.text("LangGraph + CrewAI")
         st.text("Whisper STT + TTS")
+        st.text("Female Voice: Edge TTS")
 
 def process_voice_input():
     """Handle voice input processing."""
@@ -137,31 +302,27 @@ def process_voice_input():
     tab1, tab2 = st.tabs(["📱 Record", "📁 Upload File"])
     
     with tab1:
-        st.write("Click to record your question:")
+        st.write("**Click to record your question:**")
         
-        col1, col2 = st.columns([1, 3])
-        
-        with col1:
-            if st.button("🎤 Start Recording", type="primary"):
-                if not st.session_state.openai_api_key:
-                    st.error("Please provide OpenAI API Key in sidebar")
-                    return None
-                
-                with st.spinner("🎧 Listening..."):
-                    try:
-                        from agents.voice.speech_processor import record_and_transcribe
-                        transcribed_text = record_and_transcribe(timeout=8.0)
+        # Simple recording interface
+        if st.button("🎤 Start Recording", type="primary", key="mic_button", help="8-second recording"):
+            if not st.session_state.gemini_api_key:
+                st.error("Please provide Gemini API Key in sidebar")
+                return None
+            
+            with st.spinner("🎧 Recording for 8 seconds..."):
+                try:
+                    transcribed_text = record_and_transcribe(timeout=8.0)
+                    
+                    if transcribed_text and not transcribed_text.startswith("Error") and transcribed_text.strip() != "..." and len(transcribed_text.strip()) > 3:
+                        st.success(f"✅ **Transcribed:** {transcribed_text}")
+                        return transcribed_text
+                    else:
+                        st.warning(f"⚠️ **Poor quality transcription:** {transcribed_text}")
+                        st.info("💡 Try speaking louder and clearer, closer to microphone")
                         
-                        if transcribed_text and not transcribed_text.startswith("Error"):
-                            st.success(f"📝 Transcribed: *{transcribed_text}*")
-                            return transcribed_text
-                        else:
-                            st.error(f"❌ {transcribed_text}")
-                    except Exception as e:
-                        st.error(f"Recording error: {e}")
-        
-        with col2:
-            st.info("💡 **Tips:**\n- Speak clearly\n- Ask about portfolio, markets, or earnings\n- Try: 'What's my Asia tech exposure?'")
+                except Exception as e:
+                    st.error(f"❌ Recording error: {e}")
     
     with tab2:
         st.write("Upload an audio file:")
@@ -173,8 +334,8 @@ def process_voice_input():
         )
         
         if uploaded_file is not None:
-            if not st.session_state.openai_api_key:
-                st.error("Please provide OpenAI API Key in sidebar")
+            if not st.session_state.gemini_api_key:
+                st.error("Please provide Gemini API Key in sidebar")
                 return None
             
             with st.spinner("🔄 Processing audio..."):
@@ -194,10 +355,10 @@ def process_voice_input():
                         st.success(f"📝 Transcribed: *{transcribed_text}*")
                         return transcribed_text
                     else:
-                        st.error(f"❌ {transcribed_text}")
+                        st.error(f"❌ File processing failed: {transcribed_text}")
                         
                 except Exception as e:
-                    st.error(f"File processing error: {e}")
+                    st.error(f"❌ File processing error: {e}")
     
     return None
 
@@ -205,30 +366,74 @@ def process_text_input():
     """Handle text input processing."""
     st.subheader("✍️ Text Input")
     
-    # Suggested queries
+    # Quick queries dropdown
     st.write("**Quick queries:**")
-    col1, col2, col3 = st.columns(3)
     
-    query_suggestions = [
-        "What's my portfolio performance?",
-        "Show me Asia tech exposure",
-        "Any earnings surprises today?"
+    # Comprehensive list of financial queries that work well with the system
+    query_options = [
+        "Select a quick query...",
+        # Portfolio Analysis
+        "What's my portfolio performance today?",
+        "Show me Asia tech exposure breakdown",
+        "What's my total portfolio value?",
+        "Which region has the highest allocation?",
+        "What's my risk exposure analysis?",
+        
+        # Earnings & Market Data
+        "Any earnings surprises today?",
+        "Show me recent earnings beats and misses",
+        "Which stocks beat earnings estimates?",
+        "What are the market trends today?",
+        
+        # Specific Stock Queries
+        "How is TSMC performing today?",
+        "Tell me about Alibaba (BABA) stock",
+        "How are my Indian stocks doing?",
+        "What's the performance of ITC stock?",
+        "Give me TCS stock analysis",
+        "How is Reliance performing?",
+        
+        # Risk & Strategy
+        "What's our risk exposure in Asia tech stocks?",
+        "Should I rebalance my portfolio?",
+        "Which stocks are underperforming?",
+        "What's the best performing stock today?",
+        
+        # Market Brief (Main Use Case)
+        "Give me a morning market brief",
+        "What's happening in Asian markets?",
+        "Summarize today's portfolio performance",
+        "Any important market news for my holdings?"
     ]
     
-    selected_query = None
-    for i, suggestion in enumerate(query_suggestions):
-        col = [col1, col2, col3][i]
-        if col.button(f"💡 {suggestion}", key=f"suggest_{i}"):
-            selected_query = suggestion
+    # Initialize session state for selected query
+    if 'selected_quick_query' not in st.session_state:
+        st.session_state.selected_quick_query = query_options[0]
     
-    # Text input
-    user_query = st.text_area(
-        "Your question:",
-        value=selected_query or "",
-        height=100,
-        placeholder="Ask about your portfolio, market conditions, earnings, or any financial topic..."
+    # Dropdown selection
+    selected_option = st.selectbox(
+        "Choose a pre-built query:",
+        query_options,
+        index=0,
+        help="Select from common financial queries or type your own below"
     )
     
+    # Update session state and text area when selection changes
+    query_text = ""
+    if selected_option != query_options[0]:  # Not the default "Select..."
+        query_text = selected_option
+        st.session_state.selected_quick_query = selected_option
+    
+    # Text input area
+    user_query = st.text_area(
+        "Your question:",
+        value=query_text,
+        height=100,
+        placeholder="Ask about your portfolio, market conditions, earnings, or any financial topic...",
+        help="You can select from the dropdown above or type your own question"
+    )
+    
+    # Submit button
     if st.button("🚀 Submit Query", type="primary", disabled=not user_query.strip()):
         return user_query.strip()
     
@@ -248,15 +453,6 @@ def display_response(query: str, response: str):
     # Display current response
     st.markdown(f"**Query:** *{query}*")
     st.markdown(f"**Response:** {response}")
-    
-    # TTS option
-    if st.button("🔊 Play Response", key="tts_current"):
-        with st.spinner("🔄 Generating speech..."):
-            tts_result = synthesize_speech(response)
-            if tts_result:
-                st.info(f"🔊 {tts_result}")
-            else:
-                st.error("TTS unavailable")
 
 def display_chat_history():
     """Display chat history."""
@@ -273,6 +469,69 @@ def display_chat_history():
             with st.expander(f"🕐 {chat['timestamp'].strftime('%H:%M:%S')} - {chat['query'][:50]}..."):
                 st.markdown(f"**Q:** {chat['query']}")
                 st.markdown(f"**A:** {chat['response']}")
+
+def display_full_portfolio():
+    """Display detailed portfolio breakdown with all stocks."""
+    st.subheader("🧮 Complete Portfolio Breakdown")
+    
+    try:
+        # Get portfolio data
+        portfolio_data = get_portfolio_value()
+        
+        if "error" in portfolio_data:
+            st.error(f"Portfolio data unavailable: {portfolio_data['error']}")
+            return
+            
+        # Check if positions data is available
+        if "positions" not in portfolio_data:
+            st.error("Detailed position data not available")
+            return
+            
+        positions = portfolio_data["positions"]
+        
+        if not positions:
+            st.warning("No positions found in portfolio")
+            return
+            
+        # Create a DataFrame with all positions
+        df = pd.DataFrame(positions)
+        
+        # Format currency columns
+        currency_cols = ['price', 'market_value']
+        for col in currency_cols:
+            if col in df.columns:
+                df[col] = df[col].apply(lambda x: f"${x:,.2f}")
+                
+        # Calculate and add performance metrics if available
+        if 'previous_price' in df.columns:
+            df['change'] = ((df['price'] - df['previous_price']) / df['previous_price'] * 100)
+            df['change'] = df['change'].apply(lambda x: f"{x:+.2f}%" if not pd.isna(x) else "N/A")
+        
+        # Reorder and rename columns for display
+        display_cols = ['symbol', 'shares', 'price', 'market_value', 'geo_tag']
+        if 'change' in df.columns:
+            display_cols.append('change')
+            
+        display_df = df[display_cols].rename(columns={
+            'symbol': 'Symbol',
+            'shares': 'Shares',
+            'price': 'Price',
+            'market_value': 'Value',
+            'geo_tag': 'Region/Sector',
+            'change': 'Change (%)'
+        })
+        
+        # Display full portfolio table
+        st.dataframe(display_df, use_container_width=True)
+        
+        # Summary information
+        total_value = portfolio_data.get('total_value', 0)
+        positions_count = len(positions)
+        st.info(f"📊 Total portfolio value: ${total_value:,.2f} across {positions_count} positions")
+        
+    except Exception as e:
+        st.error(f"Error displaying portfolio: {e}")
+        logger.error(f"Portfolio display error: {e}")
 
 def display_analytics_dashboard():
     """Display real-time analytics dashboard."""
@@ -306,7 +565,7 @@ def display_analytics_dashboard():
         with col3:
             st.metric(
                 "Holdings",
-                len(portfolio_data.get('holdings', []))
+                portfolio_data.get('positions_count', 0)
             )
         
         with col4:
@@ -317,11 +576,22 @@ def display_analytics_dashboard():
                 f"{positive_surprises}/{len(surprises)}"
             )
         
-        # Holdings breakdown
-        if 'holdings' in portfolio_data:
-            st.write("**Portfolio Holdings:**")
-            holdings_df = pd.DataFrame(portfolio_data['holdings'])
-            st.dataframe(holdings_df, use_container_width=True)
+        # "View Full Portfolio" button
+        if st.button("🔍 View Full Portfolio", help="Click to see detailed breakdown of all positions"):
+            display_full_portfolio()
+        
+        # Portfolio allocation breakdown
+        if 'geo_allocation' in portfolio_data:
+            st.write("**Portfolio Allocation:**")
+            allocation_df = pd.DataFrame(portfolio_data['geo_allocation'])
+            allocation_df['value'] = allocation_df['market_value'].apply(lambda x: f"${x:,.0f}")
+            allocation_df['percentage'] = allocation_df['percentage'].apply(lambda x: f"{x:.1f}%")
+            display_df = allocation_df[['geo_tag', 'value', 'percentage']].rename(columns={
+                'geo_tag': 'Region/Sector',
+                'value': 'Market Value',
+                'percentage': 'Allocation %'
+            })
+            st.dataframe(display_df, use_container_width=True)
         
         # Earnings surprises
         if surprises:
@@ -339,7 +609,12 @@ def main():
     display_sidebar()
     
     # Main content area
-    main_tab1, main_tab2, main_tab3 = st.tabs(["🎤 Voice Query", "📊 Analytics", "💬 History"])
+    main_tab1, main_tab2, main_tab3, main_tab4 = st.tabs([
+        "🎤 Voice Query", 
+        "📊 Analytics", 
+        "💼 Portfolio",
+        "💬 History"
+    ])
     
     with main_tab1:
         # Input section
@@ -360,8 +635,8 @@ def main():
         
         # Process query if provided
         if query:
-            if not st.session_state.openai_api_key:
-                st.error("❌ Please provide OpenAI API Key in the sidebar to process queries")
+            if not st.session_state.gemini_api_key:
+                st.error("❌ Please provide Gemini API Key in the sidebar to process queries")
             else:
                 with st.spinner("🧠 Processing your query..."):
                     try:
@@ -375,6 +650,10 @@ def main():
         display_analytics_dashboard()
     
     with main_tab3:
+        # Dedicated portfolio tab shows the full portfolio by default
+        display_full_portfolio()
+    
+    with main_tab4:
         display_chat_history()
     
     # Footer
