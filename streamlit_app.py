@@ -73,8 +73,20 @@ def initialize_session_state():
         st.session_state.chat_history = []
     if 'voice_enabled' not in st.session_state:
         st.session_state.voice_enabled = True
+    
+    # Use pre-configured API key for public deployment
     if 'gemini_api_key' not in st.session_state:
-        st.session_state.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+        # Check if API key is pre-configured
+        env_key = ""
+        
+        # Check Streamlit secrets first (for Cloud deployment)
+        try:
+            env_key = st.secrets["GEMINI_API_KEY"]
+        except:
+            # Fallback to environment variable
+            env_key = os.getenv("GEMINI_API_KEY", "")
+        
+        st.session_state.gemini_api_key = env_key
 
 def create_welcome_message():
     """Generate a welcome message with portfolio insights."""
@@ -94,16 +106,16 @@ def create_welcome_message():
             else:
                 exposure_status = "moderate"
             
-            welcome_msg = f"""Welcome to your Finance Assistant! 
-            Your portfolio is worth ${total_value:,.0f} across {holdings_count} positions. 
-            Your Asia tech exposure is {asia_pct:.1f}%, which is {exposure_status}. 
-            I'm ready to help with your financial analysis."""
+            welcome_msg = f"""Welcome to the AI Finance Assistant! 
+            This demo portfolio is worth ${total_value:,.0f} across {holdings_count} positions. 
+            Asia tech exposure is {asia_pct:.1f}%, which is {exposure_status}. 
+            Ask me anything about financial analysis, market trends, or portfolio insights!"""
             
             return welcome_msg
         else:
-            return "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
+            return "Welcome to the AI Finance Assistant! I'm ready to help with financial analysis, market insights, and portfolio management. Ask me anything!"
     except Exception:
-        return "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
+        return "Welcome to the AI Finance Assistant! I'm ready to help with financial analysis, market insights, and portfolio management. Ask me anything!"
 
 def play_web_compatible_tts(text: str, element_id: str = "tts_audio"):
     """Play TTS using simple, reliable method."""
@@ -258,16 +270,34 @@ def display_sidebar():
     with st.sidebar:
         st.header("🔧 Configuration")
         
-        # API Key input
-        api_key = st.text_input(
-            "Gemini API Key",
-            value=st.session_state.gemini_api_key,
-            type="password",
-            help="Required for AI processing"
-        )
-        if api_key != st.session_state.gemini_api_key:
-            st.session_state.gemini_api_key = api_key
-            os.environ["GEMINI_API_KEY"] = api_key
+        # Check if API key is pre-configured
+        env_key = ""
+        
+        # Check Streamlit secrets first (for Cloud deployment)
+        try:
+            env_key = st.secrets["GEMINI_API_KEY"]
+        except:
+            # Fallback to environment variable
+            env_key = os.getenv("GEMINI_API_KEY", "")
+        
+        if env_key:
+            # Show that API is pre-configured for public use
+            st.success("✅ API Key Pre-configured")
+            st.info("🎉 Ready to use! No setup required.")
+            st.session_state.gemini_api_key = env_key
+            os.environ["GEMINI_API_KEY"] = env_key
+        else:
+            # Show API key input for manual configuration
+            st.subheader("🔑 API Configuration")
+            api_key = st.text_input(
+                "Gemini API Key",
+                value=st.session_state.gemini_api_key,
+                type="password",
+                help="Required for AI processing"
+            )
+            if api_key != st.session_state.gemini_api_key:
+                st.session_state.gemini_api_key = api_key
+                os.environ["GEMINI_API_KEY"] = api_key
         
         st.divider()
         
