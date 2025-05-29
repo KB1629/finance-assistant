@@ -25,7 +25,7 @@ import sys
 import logging
 import tempfile
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 import base64
 import time
@@ -292,9 +292,17 @@ def display_welcome_greeting():
 
 def display_header():
     """Display the application header with real-time clock."""
-    # Real-time clock
-    current_time = datetime.now()
-    time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
+    from datetime import datetime, timezone
+    
+    # Get current time with proper formatting
+    try:
+        # Get current UTC time
+        current_time = datetime.now(timezone.utc)
+        time_str = current_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+    except:
+        # Fallback to local time
+        current_time = datetime.now()
+        time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
     
     col1, col2 = st.columns([3, 1])
     
@@ -304,18 +312,30 @@ def display_header():
     
     with col2:
         st.metric("🕒 Current Time", time_str)
-        # Auto-refresh every 30 seconds
-        time.sleep(0.1)
+        # Auto-refresh button
         if st.button("🔄 Refresh", key="refresh_time"):
             st.rerun()
     
-    # Welcome briefing button
+    # Welcome briefing - display automatically
     st.markdown("---")
-    if st.button("📊 Portfolio Overview", type="primary", help="Get current portfolio analysis"):
+    
+    # Show welcome briefing automatically
+    if PORTFOLIO_AVAILABLE:
+        try:
+            welcome_text = create_welcome_message()
+            st.success(f"📈 **Portfolio Briefing:** {welcome_text}")
+        except Exception as e:
+            # Fallback welcome message
+            st.info("🎉 **Welcome to Finance Assistant!** Your AI-powered portfolio analytics is ready.")
+    else:
+        st.info("🎉 **Welcome to Finance Assistant!** AI analysis ready. Portfolio analytics loading...")
+    
+    # Portfolio overview button for detailed analysis
+    if st.button("📊 Detailed Portfolio Analysis", type="primary", help="Get comprehensive portfolio breakdown"):
         if PORTFOLIO_AVAILABLE:
             try:
                 welcome_text = create_welcome_message()
-                st.success(f"📈 {welcome_text}")
+                st.success(f"📈 **Detailed Analysis:** {welcome_text}")
                 
                 # Only try TTS if voice is available (local deployment)
                 if VOICE_AVAILABLE and VOICE_METHOD == "system":
@@ -323,7 +343,7 @@ def display_header():
                     if audio_data:
                         st.audio(audio_data, format="audio/mp3", autoplay=True)
             except Exception as e:
-                st.error(f"Error generating portfolio overview: {e}")
+                st.error(f"Error generating detailed analysis: {e}")
         else:
             st.warning("Portfolio analytics temporarily unavailable")
     
