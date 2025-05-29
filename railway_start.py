@@ -18,12 +18,12 @@ def main():
     os.environ['STREAMLIT_SERVER_ENABLE_CORS'] = 'false'
     os.environ['STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION'] = 'false'
     
-    # Set app path
-    app_path = Path(__file__).parent / "finance_assistant" / "streamlit_app" / "main.py"
+    # Use the streamlit_app.py in the root directory
+    app_path = Path(__file__).parent / "streamlit_app.py"
     
     if not app_path.exists():
-        # Fallback to streamlit_app.py if main.py doesn't exist
-        app_path = Path(__file__).parent / "streamlit_app.py"
+        print(f"❌ Error: {app_path} not found!")
+        sys.exit(1)
     
     print(f"🚀 Starting Finance Assistant on Railway...")
     print(f"📁 App location: {app_path}")
