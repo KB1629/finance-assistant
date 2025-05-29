@@ -12,7 +12,6 @@ from langgraph.graph import Graph, END
 from langgraph.graph.message import MessageGraph
 
 from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
-from agents.data_ingestion.yfinance_client import YFinanceClient
 
 try:
     from agents.retriever.vector_store import query as vector_query
@@ -30,8 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("language.workflow")
 
-# Initialize clients
-yfinance_client = YFinanceClient()
+# Note: YFinanceClient is not needed as we use analytics functions directly
 
 class WorkflowState(TypedDict):
     """State for the language agent workflow."""
