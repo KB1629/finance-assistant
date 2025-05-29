@@ -1,0 +1,22 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "sleepApplication": false,
+    "restartPolicyType": "ON_FAILURE"
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "PORT": "8501",
+        "STREAMLIT_SERVER_PORT": "8501",
+        "STREAMLIT_SERVER_ADDRESS": "0.0.0.0",
+        "STREAMLIT_SERVER_HEADLESS": "true",
+        "STREAMLIT_BROWSER_GATHER_USAGE_STATS": "false"
+      }
+    }
+  }
+} 
