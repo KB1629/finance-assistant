@@ -4,302 +4,271 @@ import os
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
-import pandas as pd
-from tqdm import tqdm
+
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
+    faiss = None
 
 from sentence_transformers import SentenceTransformer
-import faiss
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-logger = logging.getLogger("retriever.vector_store")
+logger = logging.getLogger(__name__)
 
-# Default paths
-DEFAULT_INDEX_DIR = Path("./cache/vector_store")
-DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"  # Good balance of speed/quality
-DEFAULT_INDEX_NAME = "finance_docs"
+# Cache directory for models and index
+CACHE_DIR = Path(__file__).parent.parent.parent / "cache"
+VECTOR_STORE_DIR = CACHE_DIR / "vector_store"
+
 
 class FAISSVectorStore:
-    """FAISS vector store for document retrieval."""
-
+    """FAISS vector store for document retrieval (with fallback for cloud deployment)."""
+    
     def __init__(
         self,
-        model_name: str = DEFAULT_MODEL_NAME,
-        index_path: Optional[Path] = None,
-        index_name: str = DEFAULT_INDEX_NAME
+        index_name: str = "finance_docs",
+        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+        index_path: Optional[Path] = None
     ):
-        """Initialize the vector store.
-        
-        Args:
-            model_name: Name of the sentence-transformer model to use
-            index_path: Path to save/load the index
-            index_name: Name of the index
-        """
-        self.model_name = model_name
         self.index_name = index_name
+        self.model_name = model_name
+        self.index_path = index_path or VECTOR_STORE_DIR
+        self.index_path.mkdir(parents=True, exist_ok=True)
         
-        # Create index directory if it doesn't exist
-        self.index_path = index_path or DEFAULT_INDEX_DIR
-        os.makedirs(self.index_path, exist_ok=True)
-        
-        # Initialize model
-        logger.info(f"Loading embedding model: {model_name}")
-        self.model = SentenceTransformer(model_name)
-        self.vector_size = self.model.get_sentence_embedding_dimension()
-        
-        # Initialize index
+        # Initialize embedding model
+        self.embedding_model = None
         self.index = None
-        self.document_lookup = {}
-        self.document_ids = []
+        self.documents = []
+        self.metadata = []
+        self.vector_size = 384  # Default for all-MiniLM-L6-v2
         
-        # Try to load existing index
+        # Check if FAISS is available
+        if not FAISS_AVAILABLE:
+            logger.warning("FAISS not available - running in text-only mode")
+            return
+        
+        self._load_embedding_model()
         self._load_or_create_index()
-
-    def _get_index_files(self) -> Tuple[Path, Path]:
-        """Get paths to index files.
-        
-        Returns:
-            Tuple of (index_file, metadata_file)
-        """
-        index_file = self.index_path / f"{self.index_name}.faiss"
-        metadata_file = self.index_path / f"{self.index_name}_metadata.json"
-        return index_file, metadata_file
-
-    def _load_or_create_index(self) -> None:
+    
+    def _load_embedding_model(self):
+        """Load the sentence transformer model."""
+        try:
+            logger.info(f"Loading embedding model: {self.model_name}")
+            self.embedding_model = SentenceTransformer(self.model_name)
+            logger.info(f"Embedding model loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load embedding model: {e}")
+            raise
+    
+    def _load_or_create_index(self):
         """Load existing index or create a new one."""
-        index_file, metadata_file = self._get_index_files()
+        if not FAISS_AVAILABLE:
+            logger.warning("FAISS not available - skipping index operations")
+            return
+            
+        metadata_file = self.index_path / f"{self.index_name}_metadata.json"
+        index_file = self.index_path / f"{self.index_name}.faiss"
         
         if index_file.exists() and metadata_file.exists():
-            logger.info(f"Loading existing index from {index_file}")
             try:
+                logger.info(f"Loading existing index from {index_file}")
+                
+                # Load metadata
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.documents = data.get('documents', [])
+                    self.metadata = data.get('metadata', [])
+                
                 # Load FAISS index
                 self.index = faiss.read_index(str(index_file))
+                logger.info(f"Loaded index with {len(self.documents)} documents")
                 
-                # Load document metadata
-                with open(metadata_file, 'r') as f:
-                    metadata = json.load(f)
-                    self.document_lookup = metadata["document_lookup"]
-                    self.document_ids = metadata["document_ids"]
-                    
-                logger.info(f"Loaded index with {len(self.document_ids)} documents")
-                return
             except Exception as e:
-                logger.error(f"Failed to load index: {e}")
-                logger.info("Creating new index")
-        
-        # Create new index if loading failed or files don't exist
+                logger.error(f"Failed to load existing index: {e}")
+                self._create_new_index()
+        else:
+            self._create_new_index()
+    
+    def _create_new_index(self):
+        """Create a new FAISS index."""
+        if not FAISS_AVAILABLE:
+            logger.warning("FAISS not available - cannot create index")
+            return
+            
         logger.info("Creating new FAISS index")
         self.index = faiss.IndexFlatIP(self.vector_size)  # Inner product index for cosine similarity
-        self.document_lookup = {}
-        self.document_ids = []
-
-    def save(self) -> None:
-        """Save the index and metadata to disk."""
-        if self.index is None or len(self.document_ids) == 0:
-            logger.warning("No documents indexed, skipping save")
+        self.documents = []
+        self.metadata = []
+        
+        # Save empty index
+        self._save_index()
+    
+    def _save_index(self):
+        """Save the current index and metadata."""
+        if not FAISS_AVAILABLE or self.index is None:
+            logger.warning("FAISS not available or index not created - cannot save")
             return
             
-        index_file, metadata_file = self._get_index_files()
-        
-        # Save FAISS index
-        logger.info(f"Saving index to {index_file}")
-        faiss.write_index(self.index, str(index_file))
-        
-        # Save document metadata
-        metadata = {
-            "document_lookup": self.document_lookup,
-            "document_ids": self.document_ids,
-            "model_name": self.model_name,
-            "vector_size": self.vector_size,
-        }
-        
-        with open(metadata_file, 'w') as f:
-            json.dump(metadata, f)
+        try:
+            # Save FAISS index
+            index_file = self.index_path / f"{self.index_name}.faiss"
+            faiss.write_index(self.index, str(index_file))
             
-        logger.info(f"Saved index with {len(self.document_ids)} documents")
-
-    def add_documents(
-        self,
-        documents: List[Dict[str, Any]],
-        text_field: str = "text",
-        batch_size: int = 32,
-        show_progress: bool = True
-    ) -> None:
-        """Add documents to the vector store.
+            # Save metadata
+            metadata_file = self.index_path / f"{self.index_name}_metadata.json"
+            metadata = {
+                'documents': self.documents,
+                'metadata': self.metadata,
+                'model_name': self.model_name,
+                'vector_size': self.vector_size
+            }
+            
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Index saved with {len(self.documents)} documents")
+            
+        except Exception as e:
+            logger.error(f"Failed to save index: {e}")
+            raise
+    
+    def add_documents(self, documents: List[str], metadata: Optional[List[Dict[str, Any]]] = None) -> bool:
+        """
+        Add documents to the vector store.
         
         Args:
-            documents: List of document dictionaries
-            text_field: Field in the document that contains the text to embed
-            batch_size: Number of documents to embed at once
-            show_progress: Whether to show progress bar
+            documents: List of document texts
+            metadata: Optional metadata for each document
+            
+        Returns:
+            bool: True if successful, False otherwise
         """
+        if not FAISS_AVAILABLE:
+            logger.warning("FAISS not available - cannot add documents")
+            return False
+            
         if not documents:
-            logger.warning("No documents to add")
-            return
-            
-        logger.info(f"Adding {len(documents)} documents to index")
+            return True
         
-        # Process documents in batches to avoid OOM issues
-        for i in range(0, len(documents), batch_size):
-            batch = documents[i:i+batch_size]
+        if metadata is None:
+            metadata = [{}] * len(documents)
+        
+        if len(documents) != len(metadata):
+            raise ValueError("Number of documents must match number of metadata entries")
+        
+        try:
+            # Generate embeddings
+            logger.info(f"Generating embeddings for {len(documents)} documents")
+            embeddings = self.embedding_model.encode(documents, convert_to_numpy=True)
             
-            # Extract text and create ID mapping
-            texts = []
-            doc_map = {}
-            
-            for doc in batch:
-                if text_field not in doc:
-                    logger.warning(f"Document missing '{text_field}' field, skipping")
-                    continue
-                    
-                # Generate document ID
-                doc_id = len(self.document_ids) + len(doc_map)
-                
-                # Store text for embedding
-                texts.append(doc[text_field])
-                
-                # Store document mapping
-                doc_map[doc_id] = doc
-            
-            # Compute embeddings
-            embeddings = self.model.encode(texts, show_progress_bar=show_progress)
+            # Ensure embeddings are float32
+            embeddings = embeddings.astype(np.float32)
             
             # Add vectors to FAISS index
-            if len(embeddings) > 0:
-                faiss.normalize_L2(embeddings)  # Normalize for cosine similarity
-                self.index.add(embeddings)
-                
-                # Update document lookup and IDs
-                self.document_lookup.update(doc_map)
-                self.document_ids.extend(list(doc_map.keys()))
-                
-        logger.info(f"Total documents in index: {len(self.document_ids)}")
-        
-        # Save updated index
-        self.save()
-
-    def add_texts(
-        self,
-        texts: List[str],
-        metadatas: Optional[List[Dict[str, Any]]] = None,
-        batch_size: int = 32,
-        show_progress: bool = True
-    ) -> None:
-        """Add texts to the vector store.
-        
-        Args:
-            texts: List of text strings
-            metadatas: Optional list of metadata dictionaries
-            batch_size: Number of texts to embed at once
-            show_progress: Whether to show progress bar
-        """
-        if not texts:
-            logger.warning("No texts to add")
-            return
+            if embeddings.ndim == 1:
+                embeddings = embeddings.reshape(1, -1)
+            faiss.normalize_L2(embeddings)  # Normalize for cosine similarity
             
-        # Convert texts to documents
-        documents = []
-        for i, text in enumerate(texts):
-            doc = {"text": text}
-            if metadatas and i < len(metadatas):
-                doc.update(metadatas[i])
-            documents.append(doc)
+            self.index.add(embeddings)
             
-        self.add_documents(documents, batch_size=batch_size, show_progress=show_progress)
-
+            # Store documents and metadata
+            self.documents.extend(documents)
+            self.metadata.extend(metadata)
+            
+            # Save updated index
+            self._save_index()
+            
+            logger.info(f"Added {len(documents)} documents to index")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add documents: {e}")
+            return False
+    
     def query(
         self,
         query_text: str,
         k: int = 5,
-        threshold: Optional[float] = None
-    ) -> List[Tuple[Dict[str, Any], float]]:
-        """Query the vector store for similar documents.
+        score_threshold: float = 0.5
+    ) -> List[Dict[str, Any]]:
+        """
+        Query the vector store for relevant documents.
         
         Args:
-            query_text: Query text
+            query_text: Query string
             k: Number of results to return
-            threshold: Optional similarity threshold (0-1)
+            score_threshold: Minimum similarity score
             
         Returns:
-            List of (document, score) tuples
+            List of documents with metadata and scores
         """
-        if not query_text or self.index is None or self.index.ntotal == 0:
-            logger.warning("Empty query or index, returning empty results")
+        if not FAISS_AVAILABLE:
+            logger.warning("FAISS not available - returning empty results")
             return []
             
-        # Encode query
-        query_embedding = self.model.encode([query_text])[0]
+        if not self.documents or self.index is None:
+            logger.warning("No documents in vector store or index not loaded")
+            return []
         
-        # Normalize query embedding for cosine similarity
-        faiss.normalize_L2(query_embedding.reshape(1, -1))
-        
-        # Search index
-        k = min(k, self.index.ntotal)  # Don't request more results than we have
-        scores, indices = self.index.search(query_embedding.reshape(1, -1), k)
-        
-        # Format results
-        results = []
-        for i, idx in enumerate(indices[0]):
-            score = scores[0][i]
+        try:
+            # Generate query embedding
+            query_embedding = self.embedding_model.encode([query_text], convert_to_numpy=True)
+            query_embedding = query_embedding.astype(np.float32)
             
-            # Apply threshold if specified
-            if threshold is not None and score < threshold:
-                continue
-                
-            # Get document
-            idx_int = int(idx)
-            if idx_int in self.document_lookup:
-                results.append((self.document_lookup[idx_int], float(score)))
-                
-        return results
-
-    def query_with_transformations(
-        self,
-        query_text: str,
-        k: int = 5,
-        prefix: str = "",
-        suffix: str = "",
-        threshold: Optional[float] = None
-    ) -> List[Tuple[Dict[str, Any], float]]:
-        """Query with optional text transformations.
-        
-        Args:
-            query_text: Query text
-            k: Number of results to return
-            prefix: Optional prefix to add to query
-            suffix: Optional suffix to add to query
-            threshold: Optional similarity threshold (0-1)
+            # Normalize query embedding
+            faiss.normalize_L2(query_embedding.reshape(1, -1))
             
-        Returns:
-            List of (document, score) tuples
-        """
-        transformed_query = f"{prefix}{query_text}{suffix}".strip()
-        return self.query(transformed_query, k, threshold)
-
-    def get_collection_stats(self) -> Dict[str, Any]:
-        """Get statistics about the vector store.
-        
-        Returns:
-            Dictionary of statistics
-        """
+            # Search
+            k = min(k, len(self.documents))  # Ensure k doesn't exceed available documents
+            scores, indices = self.index.search(query_embedding, k)
+            
+            # Process results
+            results = []
+            for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
+                if score >= score_threshold and idx < len(self.documents):
+                    result = {
+                        'document': self.documents[idx],
+                        'metadata': self.metadata[idx] if idx < len(self.metadata) else {},
+                        'score': float(score),
+                        'rank': i + 1
+                    }
+                    results.append(result)
+            
+            logger.info(f"Query returned {len(results)} results above threshold {score_threshold}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Query failed: {e}")
+            return []
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get statistics about the vector store."""
+        if not FAISS_AVAILABLE:
+            return {
+                'total_documents': 0,
+                'index_size': 0,
+                'model_name': self.model_name,
+                'faiss_available': False
+            }
+            
         return {
-            "total_documents": len(self.document_ids),
-            "index_size": self.index.ntotal if self.index else 0,
-            "vector_dimension": self.vector_size,
-            "model_name": self.model_name
+            'total_documents': len(self.documents),
+            'index_size': self.index.ntotal if self.index else 0,
+            'model_name': self.model_name,
+            'vector_size': self.vector_size,
+            'faiss_available': True
         }
 
 
-# Create global instance
-_vector_store = None
+# Global vector store instance
+_vector_store: Optional[FAISSVectorStore] = None
+
 
 def get_vector_store() -> FAISSVectorStore:
-    """Get the global vector store instance.
+    """
+    Get or create the global vector store instance.
     
     Returns:
         FAISSVectorStore instance
@@ -309,32 +278,33 @@ def get_vector_store() -> FAISSVectorStore:
         _vector_store = FAISSVectorStore()
     return _vector_store
 
-def query(text: str, k: int = 5) -> List[Tuple[Dict[str, Any], float]]:
-    """Query the vector store for similar documents.
+
+def query(query_text: str, k: int = 5, score_threshold: float = 0.5) -> List[Dict[str, Any]]:
+    """
+    Query the vector store for relevant documents.
     
     Args:
-        text: Query text
-        k: Number of results to return
+        query_text: Query string
+        k: Number of results to return  
+        score_threshold: Minimum similarity score
         
     Returns:
-        List of (document, score) tuples
+        List of documents with metadata and scores
     """
-    return get_vector_store().query(text, k)
+    vector_store = get_vector_store()
+    return vector_store.query(query_text, k, score_threshold)
 
-def add_documents(documents: List[Dict[str, Any]], text_field: str = "text") -> None:
-    """Add documents to the vector store.
+
+def add_texts(texts: List[str], metadata: Optional[List[Dict[str, Any]]] = None) -> bool:
+    """
+    Add texts to the vector store.
     
     Args:
-        documents: List of document dictionaries
-        text_field: Field in the document that contains the text to embed
+        texts: List of text documents
+        metadata: Optional metadata for each document
+        
+    Returns:
+        bool: True if successful, False otherwise
     """
-    get_vector_store().add_documents(documents, text_field)
-
-def add_texts(texts: List[str], metadatas: Optional[List[Dict[str, Any]]] = None) -> None:
-    """Add texts to the vector store.
-    
-    Args:
-        texts: List of text strings
-        metadatas: Optional list of metadata dictionaries
-    """
-    get_vector_store().add_texts(texts, metadatas) 
+    vector_store = get_vector_store()
+    return vector_store.add_documents(texts, metadata) 

@@ -11,8 +11,17 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import Graph, END
 from langgraph.graph.message import MessageGraph
 
-from agents.retriever.vector_store import query as vector_query
+from agents.language.base import LanguageAgent
 from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
+from agents.data_ingestion.yfinance_client import YFinanceClient
+
+try:
+    from agents.retriever.vector_store import query as vector_query
+    VECTOR_SEARCH_AVAILABLE = True
+except ImportError:
+    VECTOR_SEARCH_AVAILABLE = False
+    vector_query = None
+
 from agents.language.gemini_client import chat_completion
 
 # Configure logging
@@ -22,6 +31,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("language.workflow")
 
+# Initialize clients
+yfinance_client = YFinanceClient()
 
 class WorkflowState(TypedDict):
     """State for the language agent workflow."""
@@ -102,7 +113,7 @@ class FinanceLanguageAgent:
                 return state + [AIMessage(content="Error: No query provided")]
             
             # Perform vector search
-            results = vector_query(query, k=3)
+            results = retrieve_documents(query, k=3)
             
             # Format results for next node
             retrieval_summary = self._format_retrieval_results(results)
@@ -304,4 +315,27 @@ def process_finance_query(query: str) -> str:
     Returns:
         Generated response
     """
-    return get_language_agent().process_query(query) 
+    return get_language_agent().process_query(query)
+
+def retrieve_documents(query: str, k: int = 3) -> List[Dict[str, Any]]:
+    """
+    Retrieve relevant documents using vector search.
+    
+    Args:
+        query: Search query
+        k: Number of documents to retrieve
+        
+    Returns:
+        List of relevant documents with metadata
+    """
+    if not VECTOR_SEARCH_AVAILABLE:
+        logger.warning("Vector search not available - no document retrieval")
+        return []
+        
+    try:
+        results = vector_query(query, k=3)
+        logger.info(f"Retrieved {len(results)} documents for query: {query}")
+        return results
+    except Exception as e:
+        logger.error(f"Document retrieval failed: {e}")
+        return [] 
