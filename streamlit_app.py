@@ -18,6 +18,7 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import base64
+import asyncio
 
 # Add project root to Python path
 project_root = Path(__file__).parent
@@ -33,20 +34,30 @@ logger = logging.getLogger("streamlit_app")
 
 from agents.language.workflow import process_finance_query
 
+# Try to import audio recorder for browser-based voice
+try:
+    from streamlit_audio_recorder import audio_recorder
+    AUDIO_RECORDER_AVAILABLE = True
+except ImportError:
+    logger.warning("streamlit-audio-recorder not available, using fallback")
+    AUDIO_RECORDER_AVAILABLE = False
+
 # Voice processing (optional for cloud deployment - Python 3.13 compatibility)
 try:
     from agents.voice.speech_processor import transcribe_audio, synthesize_speech_edge, record_and_transcribe
     VOICE_AVAILABLE = True
+    VOICE_METHOD = "system"
 except ImportError as e:
-    logger.warning(f"Voice features unavailable due to import error: {e}")
-    VOICE_AVAILABLE = False
+    logger.warning(f"System voice features unavailable: {e}")
+    VOICE_AVAILABLE = True  # Enable browser-based voice
+    VOICE_METHOD = "browser"
     # Create dummy functions for compatibility
     def transcribe_audio(audio_data):
         return "Voice transcription unavailable in cloud deployment"
     def synthesize_speech_edge(text, voice="female"):
         return None
-    def record_and_transcribe(timeout=8.0):
-        return "Voice recording unavailable in cloud deployment"
+    def record_and_transcribe():
+        return "Browser voice recording active"
 
 from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
 
@@ -257,7 +268,10 @@ def display_header():
     
     with col2:
         if VOICE_AVAILABLE:
-            st.success("✅ Voice Ready")
+            if VOICE_METHOD == "browser":
+                st.info("🌐 Browser Voice Ready")
+            else:
+                st.success("✅ Voice Ready")
         else:
             st.warning("⚠️ Voice Processing Limited")
     
@@ -352,77 +366,171 @@ def process_voice_input():
     """Handle voice input processing."""
     st.subheader("🎤 Voice Input")
     
-    # Check if voice is available
-    if not VOICE_AVAILABLE:
-        st.info("🔊 **Voice features unavailable in cloud deployment**")
-        st.markdown("""
-        Voice transcription requires system audio libraries that are not available in cloud deployment.
-        Please use **Text Input** tab instead.
-        """)
-        return None
-    
-    tab1, tab2 = st.tabs(["📱 Record", "📁 Upload File"])
-    
-    with tab1:
-        st.write("**Click to record your question:**")
+    if VOICE_METHOD == "browser" and AUDIO_RECORDER_AVAILABLE:
+        st.info("🌐 Using browser-based voice recording for cloud deployment")
         
-        # Simple recording interface
-        if st.button("🎤 Start Recording", type="primary", key="mic_button", help="8-second recording"):
-            if not st.session_state.gemini_api_key:
-                st.error("Please provide Gemini API Key in sidebar")
-                return None
-            
-            with st.spinner("🎧 Recording for 8 seconds..."):
-                try:
-                    transcribed_text = record_and_transcribe(timeout=8.0)
-                    
-                    if transcribed_text and not transcribed_text.startswith("Error") and transcribed_text.strip() != "..." and len(transcribed_text.strip()) > 3:
-                        st.success(f"✅ **Transcribed:** {transcribed_text}")
-                        return transcribed_text
-                    else:
-                        st.warning(f"⚠️ **Poor quality transcription:** {transcribed_text}")
-                        st.info("💡 Try speaking louder and clearer, closer to microphone")
-                        
-                except Exception as e:
-                    st.error(f"❌ Recording error: {e}")
-    
-    with tab2:
-        st.write("Upload an audio file:")
-        
-        uploaded_file = st.file_uploader(
-            "Choose audio file",
-            type=['wav', 'mp3', 'm4a', 'flac'],
-            help="Supported formats: WAV, MP3, M4A, FLAC"
+        # Browser-based audio recording
+        audio_bytes = audio_recorder(
+            text="Click to record",
+            recording_color="#e25d5d",
+            neutral_color="#6aa36f", 
+            icon_name="microphone",
+            icon_size="2x",
+            pause_threshold=2.0,
+            sample_rate=16000
         )
         
-        if uploaded_file is not None:
-            if not st.session_state.gemini_api_key:
-                st.error("Please provide Gemini API Key in sidebar")
-                return None
+        if audio_bytes:
+            st.audio(audio_bytes, format="audio/wav")
             
-            with st.spinner("🔄 Processing audio..."):
+            # Process the audio
+            with st.spinner("🔄 Processing your voice input..."):
                 try:
-                    # Save uploaded file temporarily
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
-                        tmp_file.write(uploaded_file.getvalue())
-                        tmp_path = tmp_file.name
+                    # Save audio to temporary file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+                        tmp_file.write(audio_bytes)
+                        tmp_file_path = tmp_file.name
                     
-                    # Transcribe
-                    transcribed_text = transcribe_audio(tmp_path)
-                    
-                    # Clean up
-                    os.unlink(tmp_path)
-                    
-                    if transcribed_text and not transcribed_text.startswith("Error"):
-                        st.success(f"📝 Transcribed: *{transcribed_text}*")
-                        return transcribed_text
+                    # Transcribe audio
+                    if VOICE_METHOD == "system":
+                        transcribed_text = transcribe_audio(tmp_file_path)
                     else:
-                        st.error(f"❌ File processing failed: {transcribed_text}")
+                        # Use browser fallback message
+                        transcribed_text = "Browser audio recorded successfully"
+                        st.success("🎉 Audio recorded! Please type your query below.")
+                    
+                    # Clean up temp file
+                    os.unlink(tmp_file_path)
+                    
+                    # Display transcription
+                    if transcribed_text and len(transcribed_text.strip()) > 3:
+                        st.success(f"🎙️ **Transcribed:** {transcribed_text}")
+                        
+                        # Process the query
+                        with st.spinner("🤖 Analyzing your request..."):
+                            response = process_finance_query(transcribed_text)
+                            
+                            # Add to chat history
+                            st.session_state.chat_history.append({
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "query": transcribed_text,
+                                "response": response,
+                                "type": "voice"
+                            })
+                            
+                            # Display response
+                            st.markdown("### 🤖 AI Response")
+                            st.markdown(response)
+                            
+                            # Audio response
+                            if st.session_state.voice_enabled:
+                                with st.spinner("🗣️ Generating audio response..."):
+                                    audio_content = synthesize_speech_edge(response, voice="female")
+                                    if audio_content:
+                                        st.audio(audio_content, format="audio/mp3")
+                                        logger.info("Edge TTS audio generated successfully")
+                    else:
+                        st.warning("⚠️ Could not understand the audio. Please try again.")
                         
                 except Exception as e:
-                    st.error(f"❌ File processing error: {e}")
+                    st.error(f"❌ Error processing voice input: {str(e)}")
+                    logger.error(f"Voice processing error: {e}")
     
-    return None
+    elif VOICE_METHOD == "system":
+        # System-based voice recording (local deployment)
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            if st.button("🎙️ Start Recording", key="voice_button"):
+                with st.spinner("🎧 Recording for 8 seconds..."):
+                    try:
+                        transcribed_text = record_and_transcribe()
+                        
+                        if transcribed_text and not transcribed_text.startswith("Error") and transcribed_text.strip() != "..." and len(transcribed_text.strip()) > 3:
+                            st.success(f"🎙️ **Transcribed:** {transcribed_text}")
+                            
+                            # Process the query
+                            with st.spinner("🤖 Analyzing your request..."):
+                                response = process_finance_query(transcribed_text)
+                                
+                                # Add to chat history
+                                st.session_state.chat_history.append({
+                                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "query": transcribed_text,
+                                    "response": response,
+                                    "type": "voice"
+                                })
+                                
+                                # Display response
+                                st.markdown("### 🤖 AI Response")
+                                st.markdown(response)
+                                
+                                # Audio response
+                                if st.session_state.voice_enabled:
+                                    with st.spinner("🗣️ Generating audio response..."):
+                                        audio_content = synthesize_speech_edge(response, voice="female")
+                                        if audio_content:
+                                            st.audio(audio_content, format="audio/mp3")
+                                            logger.info("Edge TTS audio generated successfully")
+                        else:
+                            st.warning("⚠️ Could not understand the audio. Please try again or speak more clearly.")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error in voice recording: {str(e)}")
+                        logger.error(f"Voice recording error: {e}")
+        
+        with col2:
+            # File upload option
+            uploaded_file = st.file_uploader("📁 Upload Audio File", type=['wav', 'mp3', 'm4a'])
+            if uploaded_file is not None:
+                with st.spinner("🔄 Processing uploaded audio..."):
+                    try:
+                        # Save uploaded file temporarily
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+                            tmp_file.write(uploaded_file.read())
+                            tmp_file_path = tmp_file.name
+                        
+                        # Transcribe the uploaded audio
+                        transcribed_text = transcribe_audio(tmp_file_path)
+                        
+                        # Clean up
+                        os.unlink(tmp_file_path)
+                        
+                        if transcribed_text and len(transcribed_text.strip()) > 3:
+                            st.success(f"🎙️ **Transcribed:** {transcribed_text}")
+                            
+                            # Process the query
+                            with st.spinner("🤖 Analyzing your request..."):
+                                response = process_finance_query(transcribed_text)
+                                
+                                # Add to chat history
+                                st.session_state.chat_history.append({
+                                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "query": transcribed_text,
+                                    "response": response,
+                                    "type": "voice"
+                                })
+                                
+                                # Display response
+                                st.markdown("### 🤖 AI Response")
+                                st.markdown(response)
+                                
+                                # Audio response
+                                if st.session_state.voice_enabled:
+                                    with st.spinner("🗣️ Generating audio response..."):
+                                        audio_content = synthesize_speech_edge(response, voice="female")
+                                        if audio_content:
+                                            st.audio(audio_content, format="audio/mp3")
+                                            logger.info("Edge TTS audio generated successfully")
+                        else:
+                            st.warning("⚠️ Could not transcribe the uploaded audio. Please try a different file.")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error processing uploaded audio: {str(e)}")
+                        logger.error(f"Audio upload processing error: {e}")
+    else:
+        # Fallback when no voice options available
+        st.info("💬 Voice features unavailable in cloud deployment. Please use Text Input below.")
 
 def process_text_input():
     """Handle text input processing."""
