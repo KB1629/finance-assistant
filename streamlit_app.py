@@ -327,26 +327,23 @@ def display_header():
             welcome_text = create_welcome_message()
             st.success(f"📈 **Portfolio Briefing:** {welcome_text}")
             
-            # AUTOMATICALLY PLAY WELCOME VOICE for local deployment
-            if VOICE_AVAILABLE and VOICE_METHOD == "system":
-                try:
-                    audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
-                    if audio_data:
-                        # Use HTML to create a hidden audio element that autoplays
-                        audio_bytes = base64.b64encode(audio_data).decode()
-                        audio_html = f"""
-                        <audio autoplay style="display:none;">
-                            <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
-                        </audio>
-                        <div style="color: green;">🔊 Playing welcome briefing...</div>
-                        """
-                        st.components.v1.html(audio_html, height=30)
-                    else:
-                        st.info("🔊 Audio generation temporarily unavailable")
-                except Exception as e:
-                    st.warning(f"🔊 Welcome audio: {e}")
-            else:
-                st.info("🔊 Voice briefing available in local deployment")
+            # AUTOMATICALLY PLAY WELCOME VOICE - work in both cloud and local
+            try:
+                audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+                if audio_data:
+                    # Use HTML to create a hidden audio element that autoplays
+                    audio_bytes = base64.b64encode(audio_data).decode()
+                    audio_html = f"""
+                    <audio autoplay style="display:none;">
+                        <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                    </audio>
+                    <div style="color: green;">🔊 Playing welcome briefing...</div>
+                    """
+                    st.components.v1.html(audio_html, height=30)
+                else:
+                    st.info("🔊 Audio generation temporarily unavailable")
+            except Exception as e:
+                st.warning(f"🔊 Welcome audio error: {e}")
                 
         except Exception as e:
             # Fallback welcome message
@@ -891,7 +888,7 @@ def main():
         if PORTFOLIO_AVAILABLE:
             st.success("📊 Analytics Active")
         else:
-            st.error("�� Analytics Error")
+            st.error("📈 Analytics Error")
 
 
 if __name__ == "__main__":
