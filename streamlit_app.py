@@ -24,9 +24,32 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from agents.language.workflow import process_finance_query
-from agents.voice.speech_processor import transcribe_audio, synthesize_speech, get_voice_processor, record_and_transcribe
+
+# Voice processing (optional for cloud deployment - Python 3.13 compatibility)
+try:
+    from agents.voice.speech_processor import transcribe_audio, synthesize_speech_edge, record_and_transcribe
+    VOICE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Voice features unavailable due to import error: {e}")
+    VOICE_AVAILABLE = False
+    # Create dummy functions for compatibility
+    def transcribe_audio(audio_data):
+        return "Voice transcription unavailable in cloud deployment"
+    def synthesize_speech_edge(text, voice="female"):
+        return None
+    def record_and_transcribe(timeout=8.0):
+        return "Voice recording unavailable in cloud deployment"
+
 from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
-from agents.retriever.vector_store import query as vector_query
+
+# Vector search (optional - FAISS may not be available in cloud)
+try:
+    from agents.retriever.vector_store import query as vector_query
+    VECTOR_SEARCH_AVAILABLE = True
+except ImportError:
+    VECTOR_SEARCH_AVAILABLE = False
+    def vector_query(query, k=3):
+        return []
 
 # Configure logging
 logging.basicConfig(
@@ -298,6 +321,15 @@ def display_sidebar():
 def process_voice_input():
     """Handle voice input processing."""
     st.subheader("🎤 Voice Input")
+    
+    # Check if voice is available
+    if not VOICE_AVAILABLE:
+        st.info("🔊 **Voice features unavailable in cloud deployment**")
+        st.markdown("""
+        Voice transcription requires system audio libraries that are not available in cloud deployment.
+        Please use **Text Input** tab instead.
+        """)
+        return None
     
     tab1, tab2 = st.tabs(["📱 Record", "📁 Upload File"])
     
