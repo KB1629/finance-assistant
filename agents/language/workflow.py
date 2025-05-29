@@ -11,7 +11,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import Graph, END
 from langgraph.graph.message import MessageGraph
 
-from agents.language.base import LanguageAgent
 from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
 from agents.data_ingestion.yfinance_client import YFinanceClient
 
