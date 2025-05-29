@@ -798,11 +798,11 @@ def display_full_portfolio():
         # Create a DataFrame with all positions
         df = pd.DataFrame(positions)
         
-        # Format currency columns
+        # Format currency columns with null checking
         currency_cols = ['price', 'market_value']
         for col in currency_cols:
             if col in df.columns:
-                df[col] = df[col].apply(lambda x: f"${x:,.2f}")
+                df[col] = df[col].apply(lambda x: f"${x:,.2f}" if x is not None and not pd.isna(x) else "N/A")
                 
         # Calculate and add performance metrics if available
         if 'previous_price' in df.columns:
@@ -847,36 +847,47 @@ def display_analytics_dashboard():
             st.error(f"Analytics unavailable: {portfolio_data['error']}")
             return
         
-        # Key metrics
+        # Key metrics with safe value extraction
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric(
-                "Total Portfolio",
-                f"${portfolio_data.get('total_value', 0):,.0f}"
-            )
+            total_value = portfolio_data.get('total_value', 0)
+            if total_value is not None and not pd.isna(total_value):
+                st.metric("Total Portfolio", f"${total_value:,.0f}")
+            else:
+                st.metric("Total Portfolio", "N/A")
         
         with col2:
             asia_tech = portfolio_data.get('asia_tech', {})
-            st.metric(
-                "Asia-Tech %",
-                f"{asia_tech.get('percentage', 0):.1f}%",
-                delta=f"{asia_tech.get('change_from_previous', 0):+.1f}%"
-            )
+            percentage = asia_tech.get('percentage', 0)
+            change = asia_tech.get('change_from_previous', 0)
+            
+            if percentage is not None and not pd.isna(percentage):
+                percentage_str = f"{percentage:.1f}%"
+            else:
+                percentage_str = "N/A"
+                
+            if change is not None and not pd.isna(change):
+                delta_str = f"{change:+.1f}%"
+            else:
+                delta_str = None
+                
+            st.metric("Asia-Tech %", percentage_str, delta=delta_str)
         
         with col3:
-            st.metric(
-                "Holdings",
-                portfolio_data.get('positions_count', 0)
-            )
+            positions_count = portfolio_data.get('positions_count', 0)
+            if positions_count is not None:
+                st.metric("Holdings", positions_count)
+            else:
+                st.metric("Holdings", "N/A")
         
         with col4:
             surprises = portfolio_data.get('earnings_surprises', [])
-            positive_surprises = sum(1 for s in surprises if s['surprise_percentage'] > 0)
-            st.metric(
-                "Earnings Beats",
-                f"{positive_surprises}/{len(surprises)}"
-            )
+            if surprises and isinstance(surprises, list):
+                positive_surprises = sum(1 for s in surprises if isinstance(s, dict) and s.get('surprise_percentage', 0) > 0)
+                st.metric("Earnings Beats", f"{positive_surprises}/{len(surprises)}")
+            else:
+                st.metric("Earnings Beats", "0/0")
         
         # "View Full Portfolio" button
         if st.button("🔍 View Full Portfolio", help="Click to see detailed breakdown of all positions"):
@@ -886,8 +897,15 @@ def display_analytics_dashboard():
         if 'geo_allocation' in portfolio_data:
             st.write("**Portfolio Allocation:**")
             allocation_df = pd.DataFrame(portfolio_data['geo_allocation'])
-            allocation_df['value'] = allocation_df['market_value'].apply(lambda x: f"${x:,.0f}")
-            allocation_df['percentage'] = allocation_df['percentage'].apply(lambda x: f"{x:.1f}%")
+            
+            # Apply safe formatting with null checking
+            allocation_df['value'] = allocation_df['market_value'].apply(
+                lambda x: f"${x:,.0f}" if x is not None and not pd.isna(x) else "N/A"
+            )
+            allocation_df['percentage'] = allocation_df['percentage'].apply(
+                lambda x: f"{x:.1f}%" if x is not None and not pd.isna(x) else "N/A"
+            )
+            
             display_df = allocation_df[['geo_tag', 'value', 'percentage']].rename(columns={
                 'geo_tag': 'Region/Sector',
                 'value': 'Market Value',
@@ -954,7 +972,12 @@ def main():
                         logger.error(f"Query processing error: {e}")
     
     with tab2:
-        display_analytics_dashboard()
+        try:
+            display_analytics_dashboard()
+        except Exception as e:
+            st.error(f"❌ Analytics Error: {e}")
+            st.info("📊 Analytics may be temporarily unavailable. Please check back later.")
+            logger.error(f"Analytics dashboard error: {e}")
     
     with tab3:
         display_full_portfolio()
