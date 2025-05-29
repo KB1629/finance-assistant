@@ -23,6 +23,14 @@ import base64
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
+# Configure logging early
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("streamlit_app")
+
 from agents.language.workflow import process_finance_query
 
 # Voice processing (optional for cloud deployment - Python 3.13 compatibility)
@@ -50,13 +58,6 @@ except ImportError:
     VECTOR_SEARCH_AVAILABLE = False
     def vector_query(query, k=3):
         return []
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-logger = logging.getLogger("streamlit_app")
 
 # Streamlit page configuration
 st.set_page_config(
@@ -243,10 +244,9 @@ def display_header():
             st.error("❌ Gemini API Key Required")
     
     with col2:
-        try:
-            get_voice_processor()
+        if VOICE_AVAILABLE:
             st.success("✅ Voice Ready")
-        except Exception:
+        else:
             st.warning("⚠️ Voice Processing Limited")
     
     with col3:
