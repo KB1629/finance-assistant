@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import base64
 import time
+import pytz
 
 # Configure logging early
 logging.basicConfig(
@@ -294,11 +295,12 @@ def display_header():
     """Display the application header with real-time clock."""
     from datetime import datetime, timezone
     
-    # Get current time with proper formatting
+    # Get current time in Indian Standard Time (IST)
     try:
-        # Get current UTC time
-        current_time = datetime.now(timezone.utc)
-        time_str = current_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+        # Create IST timezone
+        ist = pytz.timezone('Asia/Kolkata')
+        current_time = datetime.now(ist)
+        time_str = current_time.strftime("%Y-%m-%d %H:%M:%S IST")
     except:
         # Fallback to local time
         current_time = datetime.now()
@@ -316,7 +318,7 @@ def display_header():
         if st.button("🔄 Refresh", key="refresh_time"):
             st.rerun()
     
-    # Welcome briefing - display automatically
+    # Welcome briefing - display automatically WITH VOICE
     st.markdown("---")
     
     # Show welcome briefing automatically
@@ -324,6 +326,28 @@ def display_header():
         try:
             welcome_text = create_welcome_message()
             st.success(f"📈 **Portfolio Briefing:** {welcome_text}")
+            
+            # AUTOMATICALLY PLAY WELCOME VOICE for local deployment
+            if VOICE_AVAILABLE and VOICE_METHOD == "system":
+                try:
+                    audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+                    if audio_data:
+                        # Use HTML to create a hidden audio element that autoplays
+                        audio_bytes = base64.b64encode(audio_data).decode()
+                        audio_html = f"""
+                        <audio autoplay style="display:none;">
+                            <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                        </audio>
+                        <div style="color: green;">🔊 Playing welcome briefing...</div>
+                        """
+                        st.components.v1.html(audio_html, height=30)
+                    else:
+                        st.info("🔊 Audio generation temporarily unavailable")
+                except Exception as e:
+                    st.warning(f"🔊 Welcome audio: {e}")
+            else:
+                st.info("🔊 Voice briefing available in local deployment")
+                
         except Exception as e:
             # Fallback welcome message
             st.info("🎉 **Welcome to Finance Assistant!** Your AI-powered portfolio analytics is ready.")
@@ -847,8 +871,15 @@ def main():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        st.info(f"🕒 {current_time}")
+        try:
+            # Create IST timezone
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist)
+            time_str = current_time.strftime('%Y-%m-%d %H:%M:%S IST')
+        except:
+            current_time = datetime.now()
+            time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
+        st.info(f"🕒 {time_str}")
     
     with col2:
         if st.session_state.gemini_api_key:
@@ -860,7 +891,7 @@ def main():
         if PORTFOLIO_AVAILABLE:
             st.success("📊 Analytics Active")
         else:
-            st.error("📊 Analytics Error")
+            st.error("�� Analytics Error")
 
 
 if __name__ == "__main__":
