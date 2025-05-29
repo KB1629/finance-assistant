@@ -11,6 +11,15 @@ Voice features are available in local deployment only.
 """
 
 import streamlit as st
+
+# MUST be first Streamlit command - configure page
+st.set_page_config(
+    page_title="Finance Assistant",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import os
 import sys
 import logging
@@ -34,7 +43,7 @@ sys.path.insert(0, str(project_root))
 
 # Import core finance modules
 try:
-    from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure, get_positions
+    from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
     PORTFOLIO_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Portfolio analytics unavailable: {e}")
@@ -76,14 +85,6 @@ except ImportError as e:
     VECTOR_STORE_AVAILABLE = False
     def vector_query(query, k=3):
         return []
-
-# Streamlit page configuration
-st.set_page_config(
-    page_title="Finance Assistant",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 def initialize_session_state():
     """Initialize Streamlit session state variables."""
@@ -711,14 +712,6 @@ def display_analytics_dashboard():
 
 def main():
     """Main application function."""
-    # Set page config
-    st.set_page_config(
-        page_title="Finance Assistant",
-        page_icon="📊",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
     initialize_session_state()
     display_header()
     display_sidebar()
