@@ -436,6 +436,19 @@ def process_voice_input():
                     st.error(f"❌ Error processing voice input: {str(e)}")
                     logger.error(f"Voice processing error: {e}")
     
+    elif VOICE_METHOD == "browser" and not AUDIO_RECORDER_AVAILABLE:
+        # Cloud deployment without audio recorder
+        st.info("💬 **Voice input optimized for text in cloud deployment**")
+        st.markdown("""
+        **Note:** Advanced voice recording requires additional browser permissions in cloud environments.
+        
+        **💡 Use Text Input below** for the best experience with:
+        - ✅ Portfolio analysis 
+        - ✅ Market insights
+        - ✅ AI-powered responses
+        - ✅ Real-time data
+        """)
+    
     elif VOICE_METHOD == "system":
         # System-based voice recording (local deployment)
         col1, col2 = st.columns([1, 1])
