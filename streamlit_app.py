@@ -250,26 +250,8 @@ def display_welcome_greeting():
         # Show welcome message
         st.success(f"🎉 {welcome_text}")
         
-        # Play welcome audio without showing any media controls
-        try:
-            audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
-            if audio_data:
-                # Use HTML to create a hidden audio element that autoplays
-                audio_bytes = base64.b64encode(audio_data).decode()
-                audio_html = f"""
-                <audio autoplay style="display:none;">
-                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
-                </audio>
-                <div>🔊 Playing welcome briefing...</div>
-                """
-                st.components.v1.html(audio_html, height=30)
-            else:
-                st.warning("🔊 Audio generation failed")
-                st.info("💡 **Text version:** " + welcome_text)
-        except Exception as e:
-            logger.warning(f"Welcome TTS failed: {e}")
-            st.warning(f"🔊 Welcome audio error: {e}")
-            st.info("💡 **Text version:** " + welcome_text)
+        # Remove automatic audio playback - display text only
+        st.info("🔊 Use the 'Speak Welcome Briefing' button to hear this message")
             
     except Exception as e:
         logger.error(f"Welcome greeting error: {e}")
@@ -277,19 +259,7 @@ def display_welcome_greeting():
         # Fallback welcome message
         fallback_msg = "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
         st.success(f"🎉 {fallback_msg}")
-        try:
-            audio_data = play_web_compatible_tts(fallback_msg, "welcome_fallback")
-            if audio_data:
-                # Use HTML to create a hidden audio element that autoplays
-                audio_bytes = base64.b64encode(audio_data).decode()
-                audio_html = f"""
-                <audio autoplay style="display:none;">
-                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
-                </audio>
-                """
-                st.components.v1.html(audio_html, height=0)
-        except:
-            pass
+        st.info("🔊 Use the 'Speak Welcome Briefing' button to hear this message")
 
 def display_header():
     """Display the application header with real-time clock."""
@@ -327,23 +297,8 @@ def display_header():
             welcome_text = create_welcome_message()
             st.success(f"📈 **Portfolio Briefing:** {welcome_text}")
             
-            # AUTOMATICALLY PLAY WELCOME VOICE - work in both cloud and local
-            try:
-                audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
-                if audio_data:
-                    # Use HTML to create a hidden audio element that autoplays
-                    audio_bytes = base64.b64encode(audio_data).decode()
-                    audio_html = f"""
-                    <audio autoplay style="display:none;">
-                        <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
-                    </audio>
-                    <div style="color: green;">🔊 Playing welcome briefing...</div>
-                    """
-                    st.components.v1.html(audio_html, height=30)
-                else:
-                    st.info("🔊 Audio generation temporarily unavailable")
-            except Exception as e:
-                st.warning(f"🔊 Welcome audio error: {e}")
+            # Remove automatic voice playback - only show text briefing
+            st.info("🔊 Click the 'Speak Welcome Briefing' button below to hear the audio version")
                 
         except Exception as e:
             # Fallback welcome message
