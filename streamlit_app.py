@@ -19,45 +19,38 @@ from datetime import datetime
 import pandas as pd
 import base64
 import asyncio
-
-# Add project root to Python path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+import time
 
 # Configure logging early
-import logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("streamlit_app")
 
+# Add project root to Python path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
 from agents.language.workflow import process_finance_query
 
-# Try to import audio recorder for browser-based voice
-try:
-    from streamlit_audio_recorder import audio_recorder
-    AUDIO_RECORDER_AVAILABLE = True
-except ImportError:
-    logger.warning("streamlit-audio-recorder not available, using fallback")
-    AUDIO_RECORDER_AVAILABLE = False
-
-# Voice processing (optional for cloud deployment - Python 3.13 compatibility)
+# Voice processing (only for local deployment)
 try:
     from agents.voice.speech_processor import transcribe_audio, synthesize_speech_edge, record_and_transcribe
     VOICE_AVAILABLE = True
     VOICE_METHOD = "system"
+    logger.info("Voice features loaded for local deployment")
 except ImportError as e:
-    logger.warning(f"System voice features unavailable: {e}")
-    VOICE_AVAILABLE = True  # Enable browser-based voice
-    VOICE_METHOD = "browser"
+    logger.info(f"Voice features disabled for cloud deployment: {e}")
+    VOICE_AVAILABLE = False
+    VOICE_METHOD = "disabled"
     # Create dummy functions for compatibility
     def transcribe_audio(audio_data):
         return "Voice transcription unavailable in cloud deployment"
     def synthesize_speech_edge(text, voice="female"):
         return None
     def record_and_transcribe():
-        return "Browser voice recording active"
+        return "Voice recording unavailable in cloud deployment"
 
 from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
 
@@ -240,20 +233,23 @@ def display_header():
             welcome_text = create_welcome_message()
             st.success(f"🎉 {welcome_text}")
             
-            # Auto-generate and play audio without showing controls
-            audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
-            if audio_data:
-                # Use HTML to create a hidden audio element that autoplays
-                audio_bytes = base64.b64encode(audio_data).decode()
-                audio_html = f"""
-                <audio autoplay style="display:none;">
-                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
-                </audio>
-                <div>🔊 Playing welcome briefing...</div>
-                """
-                st.components.v1.html(audio_html, height=30)
+            # Only try TTS if voice is available (local deployment)
+            if VOICE_AVAILABLE and VOICE_METHOD == "system":
+                audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+                if audio_data:
+                    # Use HTML to create a hidden audio element that autoplays
+                    audio_bytes = base64.b64encode(audio_data).decode()
+                    audio_html = f"""
+                    <audio autoplay style="display:none;">
+                        <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                    </audio>
+                    <div>🔊 Playing welcome briefing...</div>
+                    """
+                    st.components.v1.html(audio_html, height=30)
+                else:
+                    st.warning("🔊 Audio generation failed")
             else:
-                st.warning("🔊 Audio generation failed")
+                st.info("🔊 Audio playback available in local deployment only")
         except Exception as e:
             st.error(f"Welcome briefing error: {e}")
     
@@ -267,17 +263,16 @@ def display_header():
             st.error("❌ Gemini API Key Required")
     
     with col2:
-        if VOICE_AVAILABLE:
-            if VOICE_METHOD == "browser":
-                st.info("🌐 Browser Voice Ready")
-            else:
-                st.success("✅ Voice Ready")
+        if VOICE_AVAILABLE and VOICE_METHOD == "system":
+            st.success("✅ Voice Ready (Local)")
         else:
-            st.warning("⚠️ Voice Processing Limited")
+            st.info("💬 Text Input Only (Cloud)")
     
     with col3:
-        # Show time with seconds to indicate it's working
-        st.info(f"🕐 {datetime.now().strftime('%H:%M:%S')}")
+        # Create a placeholder for real-time clock
+        time_placeholder = st.empty()
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        time_placeholder.info(f"🕐 {current_time}")
 
 def display_sidebar():
     """Display the application sidebar."""
@@ -366,91 +361,8 @@ def process_voice_input():
     """Handle voice input processing."""
     st.subheader("🎤 Voice Input")
     
-    if VOICE_METHOD == "browser" and AUDIO_RECORDER_AVAILABLE:
-        st.info("🌐 Using browser-based voice recording for cloud deployment")
-        
-        # Browser-based audio recording
-        audio_bytes = audio_recorder(
-            text="Click to record",
-            recording_color="#e25d5d",
-            neutral_color="#6aa36f", 
-            icon_name="microphone",
-            icon_size="2x",
-            pause_threshold=2.0,
-            sample_rate=16000
-        )
-        
-        if audio_bytes:
-            st.audio(audio_bytes, format="audio/wav")
-            
-            # Process the audio
-            with st.spinner("🔄 Processing your voice input..."):
-                try:
-                    # Save audio to temporary file
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
-                        tmp_file.write(audio_bytes)
-                        tmp_file_path = tmp_file.name
-                    
-                    # Transcribe audio
-                    if VOICE_METHOD == "system":
-                        transcribed_text = transcribe_audio(tmp_file_path)
-                    else:
-                        # Use browser fallback message
-                        transcribed_text = "Browser audio recorded successfully"
-                        st.success("🎉 Audio recorded! Please type your query below.")
-                    
-                    # Clean up temp file
-                    os.unlink(tmp_file_path)
-                    
-                    # Display transcription
-                    if transcribed_text and len(transcribed_text.strip()) > 3:
-                        st.success(f"🎙️ **Transcribed:** {transcribed_text}")
-                        
-                        # Process the query
-                        with st.spinner("🤖 Analyzing your request..."):
-                            response = process_finance_query(transcribed_text)
-                            
-                            # Add to chat history
-                            st.session_state.chat_history.append({
-                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "query": transcribed_text,
-                                "response": response,
-                                "type": "voice"
-                            })
-                            
-                            # Display response
-                            st.markdown("### 🤖 AI Response")
-                            st.markdown(response)
-                            
-                            # Audio response
-                            if st.session_state.voice_enabled:
-                                with st.spinner("🗣️ Generating audio response..."):
-                                    audio_content = synthesize_speech_edge(response, voice="female")
-                                    if audio_content:
-                                        st.audio(audio_content, format="audio/mp3")
-                                        logger.info("Edge TTS audio generated successfully")
-                    else:
-                        st.warning("⚠️ Could not understand the audio. Please try again.")
-                        
-                except Exception as e:
-                    st.error(f"❌ Error processing voice input: {str(e)}")
-                    logger.error(f"Voice processing error: {e}")
-    
-    elif VOICE_METHOD == "browser" and not AUDIO_RECORDER_AVAILABLE:
-        # Cloud deployment without audio recorder
-        st.info("💬 **Voice input optimized for text in cloud deployment**")
-        st.markdown("""
-        **Note:** Advanced voice recording requires additional browser permissions in cloud environments.
-        
-        **💡 Use Text Input below** for the best experience with:
-        - ✅ Portfolio analysis 
-        - ✅ Market insights
-        - ✅ AI-powered responses
-        - ✅ Real-time data
-        """)
-    
-    elif VOICE_METHOD == "system":
-        # System-based voice recording (local deployment)
+    if VOICE_AVAILABLE and VOICE_METHOD == "system":
+        # System-based voice recording (local deployment only)
         col1, col2 = st.columns([1, 1])
         
         with col1:
@@ -542,8 +454,21 @@ def process_voice_input():
                         st.error(f"❌ Error processing uploaded audio: {str(e)}")
                         logger.error(f"Audio upload processing error: {e}")
     else:
-        # Fallback when no voice options available
-        st.info("💬 Voice features unavailable in cloud deployment. Please use Text Input below.")
+        # Cloud deployment - voice features disabled
+        st.info("💬 **Voice features are disabled in cloud deployment for stability**")
+        st.markdown("""
+        **Note:** Voice recording requires system-level audio access that's not available in cloud environments.
+        
+        **💡 Use Text Input below** for full functionality:
+        - ✅ Portfolio analysis 
+        - ✅ Market insights
+        - ✅ AI-powered responses
+        - ✅ Real-time data
+        - ✅ Pre-built query options
+        """)
+        
+        # Show text input redirect
+        st.markdown("👇 **Use the Text Input section below for all queries**")
 
 def process_text_input():
     """Handle text input processing."""
@@ -788,6 +713,17 @@ def display_analytics_dashboard():
 def main():
     """Main application function."""
     initialize_session_state()
+    
+    # Add auto-refresh for real-time updates
+    if 'last_refresh' not in st.session_state:
+        st.session_state.last_refresh = time.time()
+    
+    # Auto-refresh every 30 seconds for real-time updates
+    current_time = time.time()
+    if current_time - st.session_state.last_refresh > 30:
+        st.session_state.last_refresh = current_time
+        st.rerun()
+    
     display_header()
     display_sidebar()
     
@@ -806,10 +742,12 @@ def main():
         query = None
         
         with input_col1:
-            if st.session_state.voice_enabled:
+            if VOICE_AVAILABLE:
                 voice_query = process_voice_input()
                 if voice_query:
                     query = voice_query
+            else:
+                process_voice_input()  # Show disabled message
         
         with input_col2:
             text_query = process_text_input()
@@ -839,13 +777,38 @@ def main():
     with main_tab4:
         display_chat_history()
     
-    # Footer
+    # Real-time status bar at bottom
     st.divider()
+    
+    # Status information with real-time updates
+    status_col1, status_col2, status_col3, status_col4 = st.columns(4)
+    
+    with status_col1:
+        current_time = datetime.now().strftime('%H:%M:%S')
+        st.metric("Current Time", current_time)
+    
+    with status_col2:
+        api_status = "✅ Connected" if st.session_state.gemini_api_key else "❌ Not Connected"
+        st.metric("Gemini API", api_status)
+    
+    with status_col3:
+        voice_status = "✅ Local" if VOICE_AVAILABLE else "💬 Text Only"
+        st.metric("Voice Input", voice_status)
+    
+    with status_col4:
+        try:
+            portfolio_data = get_portfolio_value()
+            total_value = portfolio_data.get('total_value', 0) if "error" not in portfolio_data else 0
+            st.metric("Portfolio Value", f"${total_value:,.0f}")
+        except:
+            st.metric("Portfolio Value", "Error")
+    
+    # Footer
     st.markdown(
         """
-        <div style='text-align: center; color: #666; font-size: 12px;'>
-        Finance Assistant v0.1.0 | Sprint 3: Voice & UI | 
-        Powered by LangGraph + CrewAI + Whisper + Streamlit
+        <div style='text-align: center; color: #666; font-size: 12px; margin-top: 20px;'>
+        Finance Assistant v0.1.0 | Cloud-Optimized | 
+        Powered by LangGraph + CrewAI + Gemini + Streamlit
         </div>
         """,
         unsafe_allow_html=True
