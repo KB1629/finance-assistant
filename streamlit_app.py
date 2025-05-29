@@ -97,6 +97,25 @@ except ImportError as e:
     AI_WORKFLOW_AVAILABLE = False
     
     # Simple backup using direct Google Generative AI
+    def get_time_based_greeting():
+        """Get appropriate greeting based on current IST time."""
+        try:
+            # Get current time in Indian Standard Time
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist)
+            current_hour = current_time.hour
+            
+            # Determine greeting based on time
+            if 5 <= current_hour < 12:
+                return "Good morning"
+            elif 12 <= current_hour < 17:
+                return "Good afternoon"
+            else:
+                return "Good evening"
+        except:
+            # Fallback to generic greeting
+            return "Hello"
+
     def process_finance_query(query):
         try:
             import google.generativeai as genai
@@ -113,8 +132,11 @@ except ImportError as e:
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
             
+            # Get time-based greeting
+            greeting = get_time_based_greeting()
+            
             # Create finance-focused prompt
-            prompt = f"""You are a financial assistant. Analyze this query and provide helpful insights:
+            prompt = f"""You are a financial assistant. {greeting}! Analyze this query and provide helpful insights:
 
 Query: {query}
 
@@ -165,6 +187,9 @@ def initialize_session_state():
 def create_welcome_message():
     """Generate a welcome message with portfolio insights."""
     try:
+        # Get time-based greeting
+        greeting = get_time_based_greeting()
+        
         portfolio_data = get_portfolio_value()
         if "error" not in portfolio_data:
             total_value = portfolio_data.get('total_value', 0)
@@ -180,14 +205,14 @@ def create_welcome_message():
             else:
                 exposure_status = "moderate"
             
-            welcome_msg = f"""Welcome to the AI Finance Assistant! 
+            welcome_msg = f"""{greeting}! Welcome to the AI Finance Assistant! 
             This demo portfolio is worth ${total_value:,.0f} across {holdings_count} positions. 
             Asia tech exposure is {asia_pct:.1f}%, which is {exposure_status}. 
             Ask me anything about financial analysis, market trends, or portfolio insights!"""
             
             return welcome_msg
         else:
-            return "Welcome to the AI Finance Assistant! I'm ready to help with financial analysis, market insights, and portfolio management. Ask me anything!"
+            return f"{greeting}! Welcome to the AI Finance Assistant! I'm ready to help with financial analysis, market insights, and portfolio management. Ask me anything!"
     except Exception:
         return "Welcome to the AI Finance Assistant! I'm ready to help with financial analysis, market insights, and portfolio management. Ask me anything!"
 
