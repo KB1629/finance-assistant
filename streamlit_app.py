@@ -1,12 +1,13 @@
 """
-Finance Assistant - Voice-Enabled Morning Market Brief
+Finance Assistant - Cloud-Ready Finance Analytics
 
 This Streamlit app provides:
-- Voice query input (microphone or file upload)
-- Text query input
-- Real-time portfolio analytics
+- Real-time portfolio analytics  
 - Market data retrieval
-- AI-powered synthesis of morning briefs
+- AI-powered financial analysis
+- Text query input
+
+Voice features are available in local deployment only.
 """
 
 import streamlit as st
@@ -18,7 +19,6 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import base64
-import asyncio
 import time
 
 # Configure logging early
@@ -32,34 +32,48 @@ logger = logging.getLogger("streamlit_app")
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from agents.language.workflow import process_finance_query
+# Import core finance modules
+try:
+    from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure, get_positions
+    PORTFOLIO_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Portfolio analytics unavailable: {e}")
+    PORTFOLIO_AVAILABLE = False
 
-# Voice processing (only for local deployment)
+# Voice processing (optional - local deployment only)
 try:
     from agents.voice.speech_processor import transcribe_audio, synthesize_speech_edge, record_and_transcribe
     VOICE_AVAILABLE = True
     VOICE_METHOD = "system"
-    logger.info("Voice features loaded for local deployment")
 except ImportError as e:
-    logger.info(f"Voice features disabled for cloud deployment: {e}")
+    logger.warning(f"System voice features unavailable: {e}")
     VOICE_AVAILABLE = False
-    VOICE_METHOD = "disabled"
+    VOICE_METHOD = "none"
     # Create dummy functions for compatibility
     def transcribe_audio(audio_data):
         return "Voice transcription unavailable in cloud deployment"
     def synthesize_speech_edge(text, voice="female"):
         return None
     def record_and_transcribe():
-        return "Voice recording unavailable in cloud deployment"
+        return "Voice features unavailable in cloud deployment"
 
-from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
+# AI workflow (optional)
+try:
+    from agents.language.workflow import process_finance_query
+    AI_WORKFLOW_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"AI workflow unavailable: {e}")
+    AI_WORKFLOW_AVAILABLE = False
+    def process_finance_query(query):
+        return "AI analysis temporarily unavailable. Please check back later."
 
-# Vector search (optional - FAISS may not be available in cloud)
+# Vector store (optional)
 try:
     from agents.retriever.vector_store import query as vector_query
-    VECTOR_SEARCH_AVAILABLE = True
-except ImportError:
-    VECTOR_SEARCH_AVAILABLE = False
+    VECTOR_STORE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Vector store unavailable: {e}")
+    VECTOR_STORE_AVAILABLE = False
     def vector_query(query, k=3):
         return []
 
@@ -222,57 +236,43 @@ def display_welcome_greeting():
             pass
 
 def display_header():
-    """Display the application header."""
-    # Title
-    st.title("🎤 Finance Assistant")
-    st.markdown("**Voice-Enabled Morning Market Brief - Speak Clearly for Best Results**")
+    """Display the application header with real-time clock."""
+    # Real-time clock
+    current_time = datetime.now()
+    time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
     
-    # Welcome briefing button directly below title - much closer
-    if st.button("🔊 Welcome Briefing", type="secondary", help="Portfolio briefing with voice"):
-        try:
-            welcome_text = create_welcome_message()
-            st.success(f"🎉 {welcome_text}")
-            
-            # Only try TTS if voice is available (local deployment)
-            if VOICE_AVAILABLE and VOICE_METHOD == "system":
-                audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
-                if audio_data:
-                    # Use HTML to create a hidden audio element that autoplays
-                    audio_bytes = base64.b64encode(audio_data).decode()
-                    audio_html = f"""
-                    <audio autoplay style="display:none;">
-                        <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
-                    </audio>
-                    <div>🔊 Playing welcome briefing...</div>
-                    """
-                    st.components.v1.html(audio_html, height=30)
-                else:
-                    st.warning("🔊 Audio generation failed")
-            else:
-                st.info("🔊 Audio playback available in local deployment only")
-        except Exception as e:
-            st.error(f"Welcome briefing error: {e}")
-    
-    # Status indicators
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns([3, 1])
     
     with col1:
-        if st.session_state.gemini_api_key:
-            st.success("✅ Gemini AI Connected")
-        else:
-            st.error("❌ Gemini API Key Required")
+        st.title("📊 Finance Assistant")
+        st.markdown("**Real-Time Portfolio Analytics & Market Insights**")
     
     with col2:
-        if VOICE_AVAILABLE and VOICE_METHOD == "system":
-            st.success("✅ Voice Ready (Local)")
-        else:
-            st.info("💬 Text Input Only (Cloud)")
+        st.metric("🕒 Current Time", time_str)
+        # Auto-refresh every 30 seconds
+        time.sleep(0.1)
+        if st.button("🔄 Refresh", key="refresh_time"):
+            st.rerun()
     
-    with col3:
-        # Create a placeholder for real-time clock
-        time_placeholder = st.empty()
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        time_placeholder.info(f"🕐 {current_time}")
+    # Welcome briefing button
+    st.markdown("---")
+    if st.button("📊 Portfolio Overview", type="primary", help="Get current portfolio analysis"):
+        if PORTFOLIO_AVAILABLE:
+            try:
+                welcome_text = create_welcome_message()
+                st.success(f"📈 {welcome_text}")
+                
+                # Only try TTS if voice is available (local deployment)
+                if VOICE_AVAILABLE and VOICE_METHOD == "system":
+                    audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+                    if audio_data:
+                        st.audio(audio_data, format="audio/mp3", autoplay=True)
+            except Exception as e:
+                st.error(f"Error generating portfolio overview: {e}")
+        else:
+            st.warning("Portfolio analytics temporarily unavailable")
+    
+    st.markdown("---")
 
 def display_sidebar():
     """Display the application sidebar."""
@@ -302,60 +302,59 @@ def display_sidebar():
                 "Gemini API Key",
                 value=st.session_state.gemini_api_key,
                 type="password",
-                help="Required for AI processing"
+                help="Enter your Google Gemini API key"
             )
-            if api_key != st.session_state.gemini_api_key:
+            
+            if api_key:
                 st.session_state.gemini_api_key = api_key
                 os.environ["GEMINI_API_KEY"] = api_key
-        
-        st.divider()
-        
-        # Voice settings
-        st.subheader("🎤 Voice Settings")
-        st.session_state.voice_enabled = st.checkbox(
-            "Enable Voice Input",
-            value=st.session_state.voice_enabled
-        )
-        
-        st.divider()
-        
-        # Portfolio quick stats
-        st.subheader("📊 Portfolio Overview")
-        try:
-            portfolio_data = get_portfolio_value()
-            if "error" not in portfolio_data:
-                st.metric(
-                    "Total Value",
-                    f"${portfolio_data.get('total_value', 0):,.0f}"
-                )
-                asia_tech = portfolio_data.get('asia_tech', {})
-                asia_pct = asia_tech.get('percentage', 0)
-                asia_change = asia_tech.get('change_from_previous', 0)
-                # Only show delta if change_from_previous is not None
-                if asia_change is not None:
-                    st.metric(
-                        "Asia-Tech Exposure",
-                        f"{asia_pct:.1f}%",
-                        delta=f"{asia_change:.1f}%"
-                    )
-                else:
-                    st.metric(
-                        "Asia-Tech Exposure",
-                        f"{asia_pct:.1f}%"
-                    )
+                st.success("✅ API Key Configured")
             else:
-                st.error("Portfolio data unavailable")
-        except Exception as e:
-            st.error(f"Portfolio error: {e}")
+                st.warning("⚠️ API key required for AI analysis")
         
-        st.divider()
+        st.markdown("---")
         
-        # System info
-        st.subheader("ℹ️ System Info")
-        st.text("Sprint 3: Voice & UI")
-        st.text("LangGraph + CrewAI")
-        st.text("Whisper STT + TTS")
-        st.text("Female Voice: Edge TTS")
+        # System Status
+        st.subheader("📊 System Status")
+        
+        # API Status
+        if st.session_state.gemini_api_key:
+            st.success("🤖 AI Analysis: Ready")
+        else:
+            st.error("🤖 AI Analysis: No API Key")
+        
+        # Portfolio Status
+        if PORTFOLIO_AVAILABLE:
+            st.success("📈 Portfolio Analytics: Active")
+        else:
+            st.error("📈 Portfolio Analytics: Unavailable")
+        
+        # Voice Status
+        if VOICE_AVAILABLE and VOICE_METHOD == "system":
+            st.success("🎤 Voice Input: Local Only")
+        else:
+            st.info("💬 Text Input: Available")
+        
+        # Deployment Status
+        if env_key:
+            st.info("☁️ Cloud Deployment: Public")
+        else:
+            st.info("🏠 Local Deployment: Private")
+        
+        st.markdown("---")
+        
+        # Quick Stats
+        if PORTFOLIO_AVAILABLE:
+            try:
+                portfolio_data = get_portfolio_value()
+                if "error" not in portfolio_data:
+                    total_value = portfolio_data.get('total_value', 0)
+                    st.metric("💰 Portfolio Value", f"${total_value:,.2f}")
+                    
+                    positions_count = portfolio_data.get('positions_count', 0)
+                    st.metric("📊 Positions", f"{positions_count}")
+            except Exception as e:
+                st.warning("Quick stats temporarily unavailable")
 
 def process_voice_input():
     """Handle voice input processing."""
@@ -712,107 +711,90 @@ def display_analytics_dashboard():
 
 def main():
     """Main application function."""
+    # Set page config
+    st.set_page_config(
+        page_title="Finance Assistant",
+        page_icon="📊",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
     initialize_session_state()
-    
-    # Add auto-refresh for real-time updates
-    if 'last_refresh' not in st.session_state:
-        st.session_state.last_refresh = time.time()
-    
-    # Auto-refresh every 30 seconds for real-time updates
-    current_time = time.time()
-    if current_time - st.session_state.last_refresh > 30:
-        st.session_state.last_refresh = current_time
-        st.rerun()
-    
     display_header()
     display_sidebar()
     
     # Main content area
-    main_tab1, main_tab2, main_tab3, main_tab4 = st.tabs([
-        "🎤 Voice Query", 
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "💬 Chat Query", 
         "📊 Analytics", 
         "💼 Portfolio",
-        "💬 History"
+        "📈 History"
     ])
     
-    with main_tab1:
-        # Input section
-        input_col1, input_col2 = st.columns([1, 1])
+    with tab1:
+        # Text Input (always available)
+        st.subheader("💬 Ask Questions About Your Portfolio")
         
-        query = None
+        # Text query input
+        text_query = process_text_input()
         
-        with input_col1:
-            if VOICE_AVAILABLE:
-                voice_query = process_voice_input()
-                if voice_query:
-                    query = voice_query
-            else:
-                process_voice_input()  # Show disabled message
-        
-        with input_col2:
-            text_query = process_text_input()
-            if text_query:
-                query = text_query
+        # Voice input (local only)
+        if VOICE_AVAILABLE and VOICE_METHOD == "system":
+            st.markdown("---")
+            st.subheader("🎤 Voice Input (Local Only)")
+            voice_query = process_voice_input()
+            
+            # Use voice query if provided
+            if voice_query:
+                text_query = voice_query
+        else:
+            st.info("🎤 Voice input available in local deployment only")
         
         # Process query if provided
-        if query:
+        if text_query:
             if not st.session_state.gemini_api_key:
                 st.error("❌ Please provide Gemini API Key in the sidebar to process queries")
             else:
                 with st.spinner("🧠 Processing your query..."):
                     try:
-                        response = process_finance_query(query)
-                        display_response(query, response)
+                        if AI_WORKFLOW_AVAILABLE:
+                            response = process_finance_query(text_query)
+                        else:
+                            response = "AI analysis temporarily unavailable. Please check back later."
+                        display_response(text_query, response)
                     except Exception as e:
                         st.error(f"Processing error: {e}")
                         logger.error(f"Query processing error: {e}")
     
-    with main_tab2:
+    with tab2:
         display_analytics_dashboard()
     
-    with main_tab3:
-        # Dedicated portfolio tab shows the full portfolio by default
+    with tab3:
         display_full_portfolio()
     
-    with main_tab4:
+    with tab4:
         display_chat_history()
     
-    # Real-time status bar at bottom
-    st.divider()
+    # Status footer
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
     
-    # Status information with real-time updates
-    status_col1, status_col2, status_col3, status_col4 = st.columns(4)
+    with col1:
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        st.info(f"🕒 {current_time}")
     
-    with status_col1:
-        current_time = datetime.now().strftime('%H:%M:%S')
-        st.metric("Current Time", current_time)
+    with col2:
+        if st.session_state.gemini_api_key:
+            st.success("🤖 AI Ready")
+        else:
+            st.error("🤖 API Key Required")
     
-    with status_col2:
-        api_status = "✅ Connected" if st.session_state.gemini_api_key else "❌ Not Connected"
-        st.metric("Gemini API", api_status)
-    
-    with status_col3:
-        voice_status = "✅ Local" if VOICE_AVAILABLE else "💬 Text Only"
-        st.metric("Voice Input", voice_status)
-    
-    with status_col4:
-        try:
-            portfolio_data = get_portfolio_value()
-            total_value = portfolio_data.get('total_value', 0) if "error" not in portfolio_data else 0
-            st.metric("Portfolio Value", f"${total_value:,.0f}")
-        except:
-            st.metric("Portfolio Value", "Error")
-    
-    # Footer
-    st.markdown(
-        """
-        <div style='text-align: center; color: #666; font-size: 12px; margin-top: 20px;'>
-        Finance Assistant v0.1.0 | Cloud-Optimized | 
-        Powered by LangGraph + CrewAI + Gemini + Streamlit
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    with col3:
+        if PORTFOLIO_AVAILABLE:
+            st.success("📊 Analytics Active")
+        else:
+            st.error("📊 Analytics Error")
+
 
 if __name__ == "__main__":
     main() 
