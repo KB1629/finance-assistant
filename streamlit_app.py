@@ -48,6 +48,27 @@ try:
 except ImportError as e:
     logger.warning(f"Portfolio analytics unavailable: {e}")
     PORTFOLIO_AVAILABLE = False
+    # Create dummy functions for compatibility
+    def get_portfolio_value():
+        return {
+            "total_value": 250000,
+            "positions_count": 15,
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "asia_tech": {"percentage": 12.5, "market_value": 31250},
+            "geo_allocation": [
+                {"geo_tag": "US-Tech", "market_value": 125000, "percentage": 50.0},
+                {"geo_tag": "Asia-Tech", "market_value": 31250, "percentage": 12.5},
+                {"geo_tag": "Europe", "market_value": 62500, "percentage": 25.0},
+                {"geo_tag": "Other", "market_value": 31250, "percentage": 12.5}
+            ],
+            "note": "Demo data - Portfolio analytics temporarily unavailable"
+        }
+    def get_risk_exposure(region=None):
+        return {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "exposures": [{"geo_tag": "Demo", "percentage": 100}],
+            "note": "Risk analysis temporarily unavailable"
+        }
 
 # Voice processing (optional - local deployment only)
 try:
@@ -73,8 +94,41 @@ try:
 except ImportError as e:
     logger.warning(f"AI workflow unavailable: {e}")
     AI_WORKFLOW_AVAILABLE = False
+    
+    # Simple backup using direct Google Generative AI
     def process_finance_query(query):
-        return "AI analysis temporarily unavailable. Please check back later."
+        try:
+            import google.generativeai as genai
+            # Try to get API key
+            api_key = ""
+            try:
+                api_key = st.secrets["GEMINI_API_KEY"]
+            except:
+                api_key = os.getenv("GEMINI_API_KEY", "")
+            
+            if not api_key:
+                return "Please configure your Gemini API key to enable AI analysis."
+            
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # Create finance-focused prompt
+            prompt = f"""You are a financial assistant. Analyze this query and provide helpful insights:
+
+Query: {query}
+
+Please provide:
+1. A brief analysis of the financial topic
+2. Key insights or recommendations
+3. Any relevant market context
+
+Keep your response concise and professional."""
+            
+            response = model.generate_content(prompt)
+            return response.text
+            
+        except Exception as e:
+            return f"AI analysis temporarily unavailable: {e}. Please try again later."
 
 # Vector store (optional)
 try:
