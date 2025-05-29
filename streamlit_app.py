@@ -1,279 +1,672 @@
 """
-🎤💰 Finance Assistant - Cloud Optimized Version
-Simple finance portfolio tracker without voice features for cloud deployment
-"""
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import yfinance as yf
-from datetime import datetime, timedelta
-import google.generativeai as genai
-import os
-from pathlib import Path
+Finance Assistant - Voice-Enabled Morning Market Brief
 
-# Page configuration
+This Streamlit app provides:
+- Voice query input (microphone or file upload)
+- Text query input
+- Real-time portfolio analytics
+- Market data retrieval
+- AI-powered synthesis of morning briefs
+"""
+
+import streamlit as st
+import os
+import sys
+import logging
+import tempfile
+from pathlib import Path
+from datetime import datetime
+import pandas as pd
+import base64
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from agents.language.workflow import process_finance_query
+from agents.voice.speech_processor import transcribe_audio, synthesize_speech, get_voice_processor, record_and_transcribe
+from agents.analytics.portfolio import get_portfolio_value, get_risk_exposure
+from agents.retriever.vector_store import query as vector_query
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("streamlit_app")
+
+# Streamlit page configuration
 st.set_page_config(
     page_title="Finance Assistant",
-    page_icon="💰",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 3rem;
-        font-weight: bold;
-        text-align: center;
-        margin-bottom: 2rem;
-        background: linear-gradient(90deg, #1f77b4, #ff7f0e);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    .metric-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    .stock-card {
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        padding: 15px;
-        margin: 10px 0;
-        background: white;
-    }
-</style>
-""", unsafe_allow_html=True)
+def initialize_session_state():
+    """Initialize Streamlit session state variables."""
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    if 'voice_enabled' not in st.session_state:
+        st.session_state.voice_enabled = True
+    if 'gemini_api_key' not in st.session_state:
+        st.session_state.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
 
-def load_sample_portfolio():
-    """Load sample portfolio data"""
-    return {
-        'AAPL': {'shares': 50, 'avg_cost': 150.00},
-        'GOOGL': {'shares': 25, 'avg_cost': 2500.00},
-        'MSFT': {'shares': 40, 'avg_cost': 300.00},
-        'TSLA': {'shares': 30, 'avg_cost': 200.00},
-        'RELIANCE.NS': {'shares': 100, 'avg_cost': 2500.00},
-        'TCS.NS': {'shares': 50, 'avg_cost': 3200.00}
-    }
-
-def get_stock_data(symbol):
-    """Get current stock data"""
+def create_welcome_message():
+    """Generate a welcome message with portfolio insights."""
     try:
-        stock = yf.Ticker(symbol)
-        info = stock.info
-        hist = stock.history(period="1d")
-        
-        if hist.empty:
-            return None
+        portfolio_data = get_portfolio_value()
+        if "error" not in portfolio_data:
+            total_value = portfolio_data.get('total_value', 0)
+            asia_tech = portfolio_data.get('asia_tech', {})
+            asia_pct = asia_tech.get('percentage', 0)
+            holdings_count = portfolio_data.get('positions_count', 0)
             
-        current_price = hist['Close'].iloc[-1]
-        
-        return {
-            'symbol': symbol,
-            'name': info.get('longName', symbol),
-            'current_price': current_price,
-            'currency': info.get('currency', 'USD'),
-            'market_cap': info.get('marketCap', 0),
-            'sector': info.get('sector', 'Unknown')
-        }
-    except Exception as e:
-        st.error(f"Error fetching data for {symbol}: {str(e)}")
-        return None
-
-def calculate_portfolio_metrics(portfolio):
-    """Calculate portfolio metrics"""
-    total_value = 0
-    total_cost = 0
-    stocks_data = []
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for i, (symbol, holding) in enumerate(portfolio.items()):
-        status_text.text(f"Loading {symbol}...")
-        progress_bar.progress((i + 1) / len(portfolio))
-        
-        stock_data = get_stock_data(symbol)
-        if stock_data:
-            shares = holding['shares']
-            avg_cost = holding['avg_cost']
-            current_value = shares * stock_data['current_price']
-            cost_basis = shares * avg_cost
+            # Determine if Asia tech exposure is high/low
+            if asia_pct > 15:
+                exposure_status = "high"
+            elif asia_pct < 5:
+                exposure_status = "low"  
+            else:
+                exposure_status = "moderate"
             
-            stocks_data.append({
-                'Symbol': symbol,
-                'Name': stock_data['name'],
-                'Shares': shares,
-                'Avg Cost': avg_cost,
-                'Current Price': stock_data['current_price'],
-                'Current Value': current_value,
-                'Cost Basis': cost_basis,
-                'P&L': current_value - cost_basis,
-                'P&L %': ((current_value - cost_basis) / cost_basis) * 100,
-                'Sector': stock_data['sector']
-            })
+            welcome_msg = f"""Welcome to your Finance Assistant! 
+            Your portfolio is worth ${total_value:,.0f} across {holdings_count} positions. 
+            Your Asia tech exposure is {asia_pct:.1f}%, which is {exposure_status}. 
+            I'm ready to help with your financial analysis."""
             
-            total_value += current_value
-            total_cost += cost_basis
-    
-    progress_bar.empty()
-    status_text.empty()
-    
-    return stocks_data, total_value, total_cost
-
-def setup_gemini():
-    """Setup Gemini AI"""
-    try:
-        # Try to get API key from secrets first, then environment
-        api_key = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
-        if api_key:
-            genai.configure(api_key=api_key)
-            return genai.GenerativeModel('gemini-1.5-flash')
-        return None
+            return welcome_msg
+        else:
+            return "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
     except Exception:
+        return "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
+
+def play_web_compatible_tts(text: str, element_id: str = "tts_audio"):
+    """Play TTS using simple, reliable method."""
+    
+    # Clean text
+    clean_text = text.replace('"', '\\"').replace("'", "\\'").replace('\n', ' ').replace('\r', ' ')
+    clean_text = ' '.join(clean_text.split())
+    
+    # Limit text length
+    if len(clean_text) > 500:
+        clean_text = clean_text[:500] + "..."
+    
+    # Try Edge TTS first
+    try:
+        import tempfile
+        import base64
+        import edge_tts
+        import asyncio
+        
+        async def generate_audio():
+            communicate = edge_tts.Communicate(clean_text, "en-US-AriaNeural")
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                tmp_path = tmp_file.name
+            await communicate.save(tmp_path)
+            return tmp_path
+        
+        # Generate audio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        audio_path = loop.run_until_complete(generate_audio())
+        
+        # Read audio file
+        with open(audio_path, 'rb') as f:
+            audio_data = f.read()
+        
+        # Clean up
+        os.unlink(audio_path)
+        
+        logger.info("Edge TTS audio generated successfully")
+        return audio_data
+        
+    except Exception as e:
+        logger.warning(f"Edge TTS failed: {e}")
         return None
 
-def get_ai_analysis(portfolio_data, query):
-    """Get AI analysis using Gemini"""
-    model = setup_gemini()
-    if not model:
-        return "AI analysis unavailable. Please configure GEMINI_API_KEY in secrets."
-    
+def display_welcome_greeting():
+    """Display and play welcome greeting - now manual only."""
     try:
-        # Prepare portfolio summary
-        df = pd.DataFrame(portfolio_data)
-        portfolio_summary = f"""
-        Portfolio Summary:
-        Total Stocks: {len(df)}
-        Top Performers: {df.nlargest(3, 'P&L %')[['Symbol', 'P&L %']].to_string(index=False)}
-        Sectors: {df['Sector'].value_counts().to_string()}
+        welcome_text = create_welcome_message()
         
-        Query: {query}
-        """
+        # Show welcome message
+        st.success(f"🎉 {welcome_text}")
         
-        response = model.generate_content(f"As a financial advisor, analyze this portfolio data and answer the query: {portfolio_summary}")
-        return response.text
+        # Play welcome audio without showing any media controls
+        try:
+            audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+            if audio_data:
+                # Use HTML to create a hidden audio element that autoplays
+                audio_bytes = base64.b64encode(audio_data).decode()
+                audio_html = f"""
+                <audio autoplay style="display:none;">
+                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                </audio>
+                <div>🔊 Playing welcome briefing...</div>
+                """
+                st.components.v1.html(audio_html, height=30)
+            else:
+                st.warning("🔊 Audio generation failed")
+                st.info("💡 **Text version:** " + welcome_text)
+        except Exception as e:
+            logger.warning(f"Welcome TTS failed: {e}")
+            st.warning(f"🔊 Welcome audio error: {e}")
+            st.info("💡 **Text version:** " + welcome_text)
+            
     except Exception as e:
-        return f"AI analysis error: {str(e)}"
+        logger.error(f"Welcome greeting error: {e}")
+        st.error(f"Welcome greeting error: {e}")
+        # Fallback welcome message
+        fallback_msg = "Welcome to your Finance Assistant! I'm ready to help with your financial analysis."
+        st.success(f"🎉 {fallback_msg}")
+        try:
+            audio_data = play_web_compatible_tts(fallback_msg, "welcome_fallback")
+            if audio_data:
+                # Use HTML to create a hidden audio element that autoplays
+                audio_bytes = base64.b64encode(audio_data).decode()
+                audio_html = f"""
+                <audio autoplay style="display:none;">
+                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                </audio>
+                """
+                st.components.v1.html(audio_html, height=0)
+        except:
+            pass
 
-def main():
-    st.markdown('<h1 class="main-header">💰 Finance Assistant</h1>', unsafe_allow_html=True)
+def display_header():
+    """Display the application header."""
+    # Title
+    st.title("🎤 Finance Assistant")
+    st.markdown("**Voice-Enabled Morning Market Brief - Speak Clearly for Best Results**")
     
-    # Sidebar
-    st.sidebar.title("🎯 Portfolio Settings")
+    # Welcome briefing button directly below title - much closer
+    if st.button("🔊 Welcome Briefing", type="secondary", help="Portfolio briefing with voice"):
+        try:
+            welcome_text = create_welcome_message()
+            st.success(f"🎉 {welcome_text}")
+            
+            # Auto-generate and play audio without showing controls
+            audio_data = play_web_compatible_tts(welcome_text, "welcome_auto")
+            if audio_data:
+                # Use HTML to create a hidden audio element that autoplays
+                audio_bytes = base64.b64encode(audio_data).decode()
+                audio_html = f"""
+                <audio autoplay style="display:none;">
+                    <source src="data:audio/mp3;base64,{audio_bytes}" type="audio/mp3">
+                </audio>
+                <div>🔊 Playing welcome briefing...</div>
+                """
+                st.components.v1.html(audio_html, height=30)
+            else:
+                st.warning("🔊 Audio generation failed")
+        except Exception as e:
+            st.error(f"Welcome briefing error: {e}")
     
-    # Load portfolio
-    portfolio = load_sample_portfolio()
-    
-    if st.sidebar.button("🔄 Refresh Data"):
-        st.cache_data.clear()
-        st.rerun()
-    
-    # Main content
-    col1, col2 = st.columns([2, 1])
+    # Status indicators
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.subheader("📊 Portfolio Overview")
-        
-        # Calculate metrics
-        with st.spinner("Loading portfolio data..."):
-            stocks_data, total_value, total_cost = calculate_portfolio_metrics(portfolio)
-        
-        if stocks_data:
-            df = pd.DataFrame(stocks_data)
-            
-            # Key metrics
-            total_pnl = total_value - total_cost
-            total_pnl_pct = (total_pnl / total_cost) * 100 if total_cost > 0 else 0
-            
-            # Display metrics
-            metric_cols = st.columns(4)
-            with metric_cols[0]:
-                st.metric("Total Value", f"${total_value:,.2f}")
-            with metric_cols[1]:
-                st.metric("Total Cost", f"${total_cost:,.2f}")
-            with metric_cols[2]:
-                st.metric("P&L", f"${total_pnl:,.2f}", f"{total_pnl_pct:.2f}%")
-            with metric_cols[3]:
-                st.metric("Positions", len(stocks_data))
-            
-            # Portfolio table
-            st.subheader("📈 Holdings")
-            formatted_df = df.copy()
-            formatted_df['Current Value'] = formatted_df['Current Value'].apply(lambda x: f"${x:,.2f}")
-            formatted_df['Cost Basis'] = formatted_df['Cost Basis'].apply(lambda x: f"${x:,.2f}")
-            formatted_df['P&L'] = formatted_df['P&L'].apply(lambda x: f"${x:,.2f}")
-            formatted_df['P&L %'] = formatted_df['P&L %'].apply(lambda x: f"{x:.2f}%")
-            formatted_df['Current Price'] = formatted_df['Current Price'].apply(lambda x: f"${x:.2f}")
-            formatted_df['Avg Cost'] = formatted_df['Avg Cost'].apply(lambda x: f"${x:.2f}")
-            
-            st.dataframe(formatted_df, use_container_width=True)
-            
-            # Charts
-            st.subheader("📊 Portfolio Analysis")
-            
-            chart_cols = st.columns(2)
-            
-            with chart_cols[0]:
-                # Sector allocation
-                sector_data = df.groupby('Sector')['Current Value'].sum().reset_index()
-                fig_sector = px.pie(sector_data, values='Current Value', names='Sector', 
-                                  title="Portfolio by Sector")
-                st.plotly_chart(fig_sector, use_container_width=True)
-            
-            with chart_cols[1]:
-                # Top performers
-                top_performers = df.nlargest(5, 'P&L %')
-                fig_performers = px.bar(top_performers, x='Symbol', y='P&L %', 
-                                      title="Top Performers by P&L %")
-                st.plotly_chart(fig_performers, use_container_width=True)
+        if st.session_state.gemini_api_key:
+            st.success("✅ Gemini AI Connected")
+        else:
+            st.error("❌ Gemini API Key Required")
     
     with col2:
-        st.subheader("🤖 AI Assistant")
+        try:
+            get_voice_processor()
+            st.success("✅ Voice Ready")
+        except Exception:
+            st.warning("⚠️ Voice Processing Limited")
+    
+    with col3:
+        # Show time with seconds to indicate it's working
+        st.info(f"🕐 {datetime.now().strftime('%H:%M:%S')}")
+
+def display_sidebar():
+    """Display the application sidebar."""
+    with st.sidebar:
+        st.header("🔧 Configuration")
         
-        # Predefined queries
-        query_options = [
-            "What's my portfolio performance summary?",
-            "Which stocks should I consider selling?",
-            "What's my risk exposure?",
-            "How diversified is my portfolio?",
-            "Which sectors am I overweight in?"
-        ]
+        # API Key input
+        api_key = st.text_input(
+            "Gemini API Key",
+            value=st.session_state.gemini_api_key,
+            type="password",
+            help="Required for AI processing"
+        )
+        if api_key != st.session_state.gemini_api_key:
+            st.session_state.gemini_api_key = api_key
+            os.environ["GEMINI_API_KEY"] = api_key
         
-        selected_query = st.selectbox("Quick Questions:", [""] + query_options)
-        custom_query = st.text_area("Or ask your own question:")
+        st.divider()
         
-        query = selected_query if selected_query else custom_query
+        # Voice settings
+        st.subheader("🎤 Voice Settings")
+        st.session_state.voice_enabled = st.checkbox(
+            "Enable Voice Input",
+            value=st.session_state.voice_enabled
+        )
         
-        if st.button("🚀 Get AI Analysis") and query:
-            with st.spinner("Analyzing..."):
-                if stocks_data:
-                    analysis = get_ai_analysis(stocks_data, query)
-                    st.write("### Analysis:")
-                    st.write(analysis)
+        st.divider()
+        
+        # Portfolio quick stats
+        st.subheader("📊 Portfolio Overview")
+        try:
+            portfolio_data = get_portfolio_value()
+            if "error" not in portfolio_data:
+                st.metric(
+                    "Total Value",
+                    f"${portfolio_data.get('total_value', 0):,.0f}"
+                )
+                asia_tech = portfolio_data.get('asia_tech', {})
+                asia_pct = asia_tech.get('percentage', 0)
+                asia_change = asia_tech.get('change_from_previous', 0)
+                # Only show delta if change_from_previous is not None
+                if asia_change is not None:
+                    st.metric(
+                        "Asia-Tech Exposure",
+                        f"{asia_pct:.1f}%",
+                        delta=f"{asia_change:.1f}%"
+                    )
                 else:
-                    st.warning("Please wait for portfolio data to load first.")
+                    st.metric(
+                        "Asia-Tech Exposure",
+                        f"{asia_pct:.1f}%"
+                    )
+            else:
+                st.error("Portfolio data unavailable")
+        except Exception as e:
+            st.error(f"Portfolio error: {e}")
         
-        # Market summary
-        st.subheader("📈 Market Summary")
-        st.info("Real-time market data and analysis powered by Yahoo Finance and Google AI")
+        st.divider()
         
-        # Tips
-        st.subheader("💡 Quick Tips")
-        tips = [
-            "💼 Diversify across sectors and geographies",
-            "📊 Review your portfolio monthly",
-            "🎯 Set clear investment goals",
-            "⚖️ Balance risk and reward",
-            "📚 Stay informed about market trends"
-        ]
+        # System info
+        st.subheader("ℹ️ System Info")
+        st.text("Sprint 3: Voice & UI")
+        st.text("LangGraph + CrewAI")
+        st.text("Whisper STT + TTS")
+        st.text("Female Voice: Edge TTS")
+
+def process_voice_input():
+    """Handle voice input processing."""
+    st.subheader("🎤 Voice Input")
+    
+    tab1, tab2 = st.tabs(["📱 Record", "📁 Upload File"])
+    
+    with tab1:
+        st.write("**Click to record your question:**")
         
-        for tip in tips:
-            st.write(tip)
+        # Simple recording interface
+        if st.button("🎤 Start Recording", type="primary", key="mic_button", help="8-second recording"):
+            if not st.session_state.gemini_api_key:
+                st.error("Please provide Gemini API Key in sidebar")
+                return None
+            
+            with st.spinner("🎧 Recording for 8 seconds..."):
+                try:
+                    transcribed_text = record_and_transcribe(timeout=8.0)
+                    
+                    if transcribed_text and not transcribed_text.startswith("Error") and transcribed_text.strip() != "..." and len(transcribed_text.strip()) > 3:
+                        st.success(f"✅ **Transcribed:** {transcribed_text}")
+                        return transcribed_text
+                    else:
+                        st.warning(f"⚠️ **Poor quality transcription:** {transcribed_text}")
+                        st.info("💡 Try speaking louder and clearer, closer to microphone")
+                        
+                except Exception as e:
+                    st.error(f"❌ Recording error: {e}")
+    
+    with tab2:
+        st.write("Upload an audio file:")
+        
+        uploaded_file = st.file_uploader(
+            "Choose audio file",
+            type=['wav', 'mp3', 'm4a', 'flac'],
+            help="Supported formats: WAV, MP3, M4A, FLAC"
+        )
+        
+        if uploaded_file is not None:
+            if not st.session_state.gemini_api_key:
+                st.error("Please provide Gemini API Key in sidebar")
+                return None
+            
+            with st.spinner("🔄 Processing audio..."):
+                try:
+                    # Save uploaded file temporarily
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        tmp_path = tmp_file.name
+                    
+                    # Transcribe
+                    transcribed_text = transcribe_audio(tmp_path)
+                    
+                    # Clean up
+                    os.unlink(tmp_path)
+                    
+                    if transcribed_text and not transcribed_text.startswith("Error"):
+                        st.success(f"📝 Transcribed: *{transcribed_text}*")
+                        return transcribed_text
+                    else:
+                        st.error(f"❌ File processing failed: {transcribed_text}")
+                        
+                except Exception as e:
+                    st.error(f"❌ File processing error: {e}")
+    
+    return None
+
+def process_text_input():
+    """Handle text input processing."""
+    st.subheader("✍️ Text Input")
+    
+    # Quick queries dropdown
+    st.write("**Quick queries:**")
+    
+    # Comprehensive list of financial queries that work well with the system
+    query_options = [
+        "Select a quick query...",
+        # Portfolio Analysis
+        "What's my portfolio performance today?",
+        "Show me Asia tech exposure breakdown",
+        "What's my total portfolio value?",
+        "Which region has the highest allocation?",
+        "What's my risk exposure analysis?",
+        
+        # Earnings & Market Data
+        "Any earnings surprises today?",
+        "Show me recent earnings beats and misses",
+        "Which stocks beat earnings estimates?",
+        "What are the market trends today?",
+        
+        # Specific Stock Queries
+        "How is TSMC performing today?",
+        "Tell me about Alibaba (BABA) stock",
+        "How are my Indian stocks doing?",
+        "What's the performance of ITC stock?",
+        "Give me TCS stock analysis",
+        "How is Reliance performing?",
+        
+        # Risk & Strategy
+        "What's our risk exposure in Asia tech stocks?",
+        "Should I rebalance my portfolio?",
+        "Which stocks are underperforming?",
+        "What's the best performing stock today?",
+        
+        # Market Brief (Main Use Case)
+        "Give me a morning market brief",
+        "What's happening in Asian markets?",
+        "Summarize today's portfolio performance",
+        "Any important market news for my holdings?"
+    ]
+    
+    # Initialize session state for selected query
+    if 'selected_quick_query' not in st.session_state:
+        st.session_state.selected_quick_query = query_options[0]
+    
+    # Dropdown selection
+    selected_option = st.selectbox(
+        "Choose a pre-built query:",
+        query_options,
+        index=0,
+        help="Select from common financial queries or type your own below"
+    )
+    
+    # Update session state and text area when selection changes
+    query_text = ""
+    if selected_option != query_options[0]:  # Not the default "Select..."
+        query_text = selected_option
+        st.session_state.selected_quick_query = selected_option
+    
+    # Text input area
+    user_query = st.text_area(
+        "Your question:",
+        value=query_text,
+        height=100,
+        placeholder="Ask about your portfolio, market conditions, earnings, or any financial topic...",
+        help="You can select from the dropdown above or type your own question"
+    )
+    
+    # Submit button
+    if st.button("🚀 Submit Query", type="primary", disabled=not user_query.strip()):
+        return user_query.strip()
+    
+    return None
+
+def display_response(query: str, response: str):
+    """Display the AI response."""
+    st.subheader("🤖 AI Response")
+    
+    # Add to chat history
+    st.session_state.chat_history.append({
+        "timestamp": datetime.now(),
+        "query": query,
+        "response": response
+    })
+    
+    # Display current response
+    st.markdown(f"**Query:** *{query}*")
+    st.markdown(f"**Response:** {response}")
+
+def display_chat_history():
+    """Display chat history."""
+    if st.session_state.chat_history:
+        st.subheader("💬 Chat History")
+        
+        # Clear history button
+        if st.button("🗑️ Clear History"):
+            st.session_state.chat_history = []
+            st.rerun()
+        
+        # Display history in reverse order (newest first)
+        for i, chat in enumerate(reversed(st.session_state.chat_history[-5:])):  # Last 5 only
+            with st.expander(f"🕐 {chat['timestamp'].strftime('%H:%M:%S')} - {chat['query'][:50]}..."):
+                st.markdown(f"**Q:** {chat['query']}")
+                st.markdown(f"**A:** {chat['response']}")
+
+def display_full_portfolio():
+    """Display detailed portfolio breakdown with all stocks."""
+    st.subheader("🧮 Complete Portfolio Breakdown")
+    
+    try:
+        # Get portfolio data
+        portfolio_data = get_portfolio_value()
+        
+        if "error" in portfolio_data:
+            st.error(f"Portfolio data unavailable: {portfolio_data['error']}")
+            return
+            
+        # Check if positions data is available
+        if "positions" not in portfolio_data:
+            st.error("Detailed position data not available")
+            return
+            
+        positions = portfolio_data["positions"]
+        
+        if not positions:
+            st.warning("No positions found in portfolio")
+            return
+            
+        # Create a DataFrame with all positions
+        df = pd.DataFrame(positions)
+        
+        # Format currency columns
+        currency_cols = ['price', 'market_value']
+        for col in currency_cols:
+            if col in df.columns:
+                df[col] = df[col].apply(lambda x: f"${x:,.2f}")
+                
+        # Calculate and add performance metrics if available
+        if 'previous_price' in df.columns:
+            df['change'] = ((df['price'] - df['previous_price']) / df['previous_price'] * 100)
+            df['change'] = df['change'].apply(lambda x: f"{x:+.2f}%" if not pd.isna(x) else "N/A")
+        
+        # Reorder and rename columns for display
+        display_cols = ['symbol', 'shares', 'price', 'market_value', 'geo_tag']
+        if 'change' in df.columns:
+            display_cols.append('change')
+            
+        display_df = df[display_cols].rename(columns={
+            'symbol': 'Symbol',
+            'shares': 'Shares',
+            'price': 'Price',
+            'market_value': 'Value',
+            'geo_tag': 'Region/Sector',
+            'change': 'Change (%)'
+        })
+        
+        # Display full portfolio table
+        st.dataframe(display_df, use_container_width=True)
+        
+        # Summary information
+        total_value = portfolio_data.get('total_value', 0)
+        positions_count = len(positions)
+        st.info(f"📊 Total portfolio value: ${total_value:,.2f} across {positions_count} positions")
+        
+    except Exception as e:
+        st.error(f"Error displaying portfolio: {e}")
+        logger.error(f"Portfolio display error: {e}")
+
+def display_analytics_dashboard():
+    """Display real-time analytics dashboard."""
+    st.subheader("📈 Real-Time Analytics")
+    
+    try:
+        # Get portfolio data
+        portfolio_data = get_portfolio_value()
+        
+        if "error" in portfolio_data:
+            st.error(f"Analytics unavailable: {portfolio_data['error']}")
+            return
+        
+        # Key metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Total Portfolio",
+                f"${portfolio_data.get('total_value', 0):,.0f}"
+            )
+        
+        with col2:
+            asia_tech = portfolio_data.get('asia_tech', {})
+            st.metric(
+                "Asia-Tech %",
+                f"{asia_tech.get('percentage', 0):.1f}%",
+                delta=f"{asia_tech.get('change_from_previous', 0):+.1f}%"
+            )
+        
+        with col3:
+            st.metric(
+                "Holdings",
+                portfolio_data.get('positions_count', 0)
+            )
+        
+        with col4:
+            surprises = portfolio_data.get('earnings_surprises', [])
+            positive_surprises = sum(1 for s in surprises if s['surprise_percentage'] > 0)
+            st.metric(
+                "Earnings Beats",
+                f"{positive_surprises}/{len(surprises)}"
+            )
+        
+        # "View Full Portfolio" button
+        if st.button("🔍 View Full Portfolio", help="Click to see detailed breakdown of all positions"):
+            display_full_portfolio()
+        
+        # Portfolio allocation breakdown
+        if 'geo_allocation' in portfolio_data:
+            st.write("**Portfolio Allocation:**")
+            allocation_df = pd.DataFrame(portfolio_data['geo_allocation'])
+            allocation_df['value'] = allocation_df['market_value'].apply(lambda x: f"${x:,.0f}")
+            allocation_df['percentage'] = allocation_df['percentage'].apply(lambda x: f"{x:.1f}%")
+            display_df = allocation_df[['geo_tag', 'value', 'percentage']].rename(columns={
+                'geo_tag': 'Region/Sector',
+                'value': 'Market Value',
+                'percentage': 'Allocation %'
+            })
+            st.dataframe(display_df, use_container_width=True)
+        
+        # Earnings surprises
+        if surprises:
+            st.write("**Recent Earnings Surprises:**")
+            surprises_df = pd.DataFrame(surprises)
+            st.dataframe(surprises_df, use_container_width=True)
+            
+    except Exception as e:
+        st.error(f"Analytics error: {e}")
+
+def main():
+    """Main application function."""
+    initialize_session_state()
+    display_header()
+    display_sidebar()
+    
+    # Main content area
+    main_tab1, main_tab2, main_tab3, main_tab4 = st.tabs([
+        "🎤 Voice Query", 
+        "📊 Analytics", 
+        "💼 Portfolio",
+        "💬 History"
+    ])
+    
+    with main_tab1:
+        # Input section
+        input_col1, input_col2 = st.columns([1, 1])
+        
+        query = None
+        
+        with input_col1:
+            if st.session_state.voice_enabled:
+                voice_query = process_voice_input()
+                if voice_query:
+                    query = voice_query
+        
+        with input_col2:
+            text_query = process_text_input()
+            if text_query:
+                query = text_query
+        
+        # Process query if provided
+        if query:
+            if not st.session_state.gemini_api_key:
+                st.error("❌ Please provide Gemini API Key in the sidebar to process queries")
+            else:
+                with st.spinner("🧠 Processing your query..."):
+                    try:
+                        response = process_finance_query(query)
+                        display_response(query, response)
+                    except Exception as e:
+                        st.error(f"Processing error: {e}")
+                        logger.error(f"Query processing error: {e}")
+    
+    with main_tab2:
+        display_analytics_dashboard()
+    
+    with main_tab3:
+        # Dedicated portfolio tab shows the full portfolio by default
+        display_full_portfolio()
+    
+    with main_tab4:
+        display_chat_history()
+    
+    # Footer
+    st.divider()
+    st.markdown(
+        """
+        <div style='text-align: center; color: #666; font-size: 12px;'>
+        Finance Assistant v0.1.0 | Sprint 3: Voice & UI | 
+        Powered by LangGraph + CrewAI + Whisper + Streamlit
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 if __name__ == "__main__":
     main() 
