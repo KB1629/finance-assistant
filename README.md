@@ -1,49 +1,65 @@
 ---
-title: Voice-Enabled Finance Assistant
+title: Finance Assistant
 emoji: 💰
 colorFrom: blue
 colorTo: green
 sdk: streamlit
-sdk_version: 1.31.0
+sdk_version: 1.28.1
 app_file: streamlit_app.py
 pinned: false
 license: mit
+python_version: 3.11
 ---
 
-# 💰 Voice-Enabled Finance Assistant
+# 🎤💰 Voice-Enabled Finance Assistant
 
-A sophisticated AI-powered finance assistant with voice interaction capabilities and real-time portfolio analysis.
+An intelligent finance assistant with voice interaction capabilities, powered by AI and real-time portfolio analytics.
 
-## Features
+## 🌟 Features
 
-- 📊 **Portfolio Dashboard**: Interactive portfolio visualization with real-time data
-- 🎤 **Voice Interaction**: Ask questions about your portfolio using voice commands
-- 🔊 **Text-to-Speech**: Hear responses in natural voice
-- 📈 **Analytics**: Comprehensive portfolio performance analysis
-- 🌍 **Multi-Market**: Support for US, Indian, and Asian markets
-- 🎨 **Modern UI**: Beautiful, responsive Streamlit interface
+- **🎙️ Voice Input**: Speak your queries using advanced speech recognition
+- **🔊 Voice Output**: Get responses in natural speech using text-to-speech
+- **📊 Portfolio Analytics**: Real-time portfolio performance tracking
+- **💹 Stock Analysis**: Comprehensive stock and market analysis
+- **🌍 Global Markets**: Support for US, Indian, and international markets
+- **📈 Risk Analysis**: Portfolio risk assessment and recommendations
+- **🤖 AI-Powered**: Advanced language models for intelligent responses
 
-## Portfolio Value: $242,040
-**27 diversified stock positions** across multiple markets
+## 🚀 Quick Start
 
-## How to Use
-
-1. **Voice Mode**: Click the microphone button and ask questions like:
+1. Upload your portfolio data or use the sample portfolio
+2. Ask questions using voice or text:
    - "What's my portfolio performance today?"
-   - "Tell me about my Indian stocks"
+   - "Which stocks should I consider selling?"
    - "What's my risk exposure?"
+   - "Tell me about AAPL stock"
 
-2. **Text Mode**: Type your questions directly
+## 💬 Sample Queries
 
-3. **Audio Briefing**: Get daily portfolio summaries
+- Portfolio overview and performance
+- Individual stock analysis
+- Risk assessment and recommendations  
+- Market trends and insights
+- Sector allocation analysis
 
-## Technology Stack
+## 🛠️ Technology Stack
 
 - **Frontend**: Streamlit
-- **AI**: Google Gemini, OpenAI Whisper
-- **Data**: Yahoo Finance, Real-time market data
-- **Voice**: SpeechRecognition, Edge TTS
-- **Analytics**: Custom portfolio analysis engine
+- **AI/ML**: Google Gemini, Whisper, Sentence Transformers
+- **TTS**: Edge TTS
+- **Data**: Real-time market data integration
+- **Analytics**: Advanced portfolio analytics engine
+
+## 📊 Portfolio Analytics
+
+The assistant provides comprehensive portfolio insights including:
+- Total portfolio value and daily changes
+- Individual stock performance
+- Sector and geographic allocation
+- Risk metrics and analysis
+- Performance benchmarking
+
+Built with ❤️ for intelligent portfolio management
 
 # 🎤 Finance Assistant - Voice-Enabled Market Brief
 
