@@ -1,3 +1,50 @@
+---
+title: Voice-Enabled Finance Assistant
+emoji: 💰
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: 1.31.0
+app_file: streamlit_app.py
+pinned: false
+license: mit
+---
+
+# 💰 Voice-Enabled Finance Assistant
+
+A sophisticated AI-powered finance assistant with voice interaction capabilities and real-time portfolio analysis.
+
+## Features
+
+- 📊 **Portfolio Dashboard**: Interactive portfolio visualization with real-time data
+- 🎤 **Voice Interaction**: Ask questions about your portfolio using voice commands
+- 🔊 **Text-to-Speech**: Hear responses in natural voice
+- 📈 **Analytics**: Comprehensive portfolio performance analysis
+- 🌍 **Multi-Market**: Support for US, Indian, and Asian markets
+- 🎨 **Modern UI**: Beautiful, responsive Streamlit interface
+
+## Portfolio Value: $242,040
+**27 diversified stock positions** across multiple markets
+
+## How to Use
+
+1. **Voice Mode**: Click the microphone button and ask questions like:
+   - "What's my portfolio performance today?"
+   - "Tell me about my Indian stocks"
+   - "What's my risk exposure?"
+
+2. **Text Mode**: Type your questions directly
+
+3. **Audio Briefing**: Get daily portfolio summaries
+
+## Technology Stack
+
+- **Frontend**: Streamlit
+- **AI**: Google Gemini, OpenAI Whisper
+- **Data**: Yahoo Finance, Real-time market data
+- **Voice**: SpeechRecognition, Edge TTS
+- **Analytics**: Custom portfolio analysis engine
+
 # 🎤 Finance Assistant - Voice-Enabled Market Brief
 
 **Multi-Agent Finance Assistant with Voice Capabilities**
