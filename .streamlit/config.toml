@@ -3,12 +3,13 @@ primaryColor = "#1E88E5"
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F0F2F6"
 textColor = "#262730"
-font = "monospace"
+font = "sans serif"
 
 [server]
 port = 8501
-enableCORS = true
+enableCORS = false
 headless = true
+enableXsrfProtection = true
 
 [browser]
 gatherUsageStats = false 
