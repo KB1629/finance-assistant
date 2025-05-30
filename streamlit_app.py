@@ -400,74 +400,33 @@ def display_sidebar():
         
         st.markdown("---")
         
-        # Market quick links
-        st.subheader("🔗 Quick Portfolio Queries")
+        # Portfolio summary
+        st.subheader("💼 Portfolio Overview")
+        st.markdown(f"""
+        **Key Metrics:**
+        - **Total Positions:** {portfolio['positions_count']} stocks
+        - **Cost Basis:** ${portfolio['cost_basis']:,}
+        - **Unrealized P&L:** ${portfolio['total_gain_loss']:+,} ({portfolio['total_gain_loss_percent']:+.2f}%)
+        - **Last Updated:** {portfolio['last_updated']}
+        """)
         
-        # Organize queries by category
-        st.markdown("**📊 Performance Analysis:**")
-        performance_queries = [
-            "What's my portfolio performance today?",
-            "Show me my total gains and losses",
-            "How is my portfolio performing this week?",
-            "What's my best performing stock today?",
-            "Which stocks are underperforming?"
-        ]
+        st.markdown("---")
         
-        for query in performance_queries:
-            if st.button(query, key=f"perf_{hash(query)}"):
-                st.session_state.quick_query = query
+        # Quick navigation
+        st.subheader("🧭 Quick Navigation")
+        st.markdown("""
+        💡 **Tip:** Use the Quick Portfolio Queries in the Chat tab for instant analysis!
         
-        st.markdown("**🌏 Regional & Sector Analysis:**")
-        regional_queries = [
-            "Show me Asia tech exposure analysis",
-            "What's my US tech allocation?", 
-            "How is my European portfolio doing?",
-            "Analyze my regional diversification",
-            "Which region is performing best?"
-        ]
+        **Tabs:**
+        - 💬 **Chat Query:** Ask questions & get AI insights
+        - 📊 **Analytics:** View detailed dashboard
+        - 📈 **Portfolio:** Browse all holdings
+        """)
         
-        for query in regional_queries:
-            if st.button(query, key=f"regional_{hash(query)}"):
-                st.session_state.quick_query = query
-        
-        st.markdown("**⚠️ Risk Analysis:**")
-        risk_queries = [
-            "What's my risk exposure analysis?",
-            "Is my Asia tech exposure too high?",
-            "Show me portfolio risk metrics",
-            "What's my portfolio volatility?",
-            "Analyze my concentration risk"
-        ]
-        
-        for query in risk_queries:
-            if st.button(query, key=f"risk_{hash(query)}"):
-                st.session_state.quick_query = query
-        
-        st.markdown("**📈 Individual Stocks:**")
-        stock_queries = [
-            "Tell me about my Apple holdings",
-            "How is Tesla performing in my portfolio?",
-            "Should I buy more Microsoft?",
-            "What's happening with my Indian stocks?",
-            "Which tech stock should I focus on?"
-        ]
-        
-        for query in stock_queries:
-            if st.button(query, key=f"stock_{hash(query)}"):
-                st.session_state.quick_query = query
-                
-        st.markdown("**🔮 Market Insights:**")
-        market_queries = [
-            "Give me today's market brief",
-            "What's happening in tech markets?",
-            "Any earnings announcements today?",
-            "Show me market opportunities",
-            "What should I watch out for?"
-        ]
-        
-        for query in market_queries:
-            if st.button(query, key=f"market_{hash(query)}"):
-                st.session_state.quick_query = query
+        # Footer
+        st.markdown("---")
+        st.markdown("🤖 **AI Finance Studio**")
+        st.markdown("*Powered by Gemini AI*")
 
 def clean_text_for_voice(text):
     """Clean text for voice synthesis by removing emojis and special characters."""
@@ -533,13 +492,109 @@ def main():
     with tab1:
         st.subheader("💬 Ask Your Financial Questions")
         
-        # Check for quick query from sidebar
+        # Quick Portfolio Queries Section - moved from sidebar for better UX
+        st.markdown("### 🚀 Quick Portfolio Queries")
+        st.markdown("*Click any question below for instant analysis:*")
+        
+        # Organize queries by category with columns for better layout
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**📊 Performance Analysis:**")
+            performance_queries = [
+                "What's my portfolio performance today?",
+                "Show me my total gains and losses",
+                "How is my portfolio performing this week?",
+                "What's my best performing stock today?",
+                "Which stocks are underperforming?"
+            ]
+            
+            for query in performance_queries:
+                if st.button(query, key=f"perf_{hash(query)}", use_container_width=True):
+                    st.session_state.quick_query = query
+                    st.rerun()
+            
+            st.markdown("**🌏 Regional & Sector Analysis:**")
+            regional_queries = [
+                "Show me Asia tech exposure analysis",
+                "What's my US tech allocation?", 
+                "How is my European portfolio doing?",
+                "Analyze my regional diversification",
+                "Which region is performing best?"
+            ]
+            
+            for query in regional_queries:
+                if st.button(query, key=f"regional_{hash(query)}", use_container_width=True):
+                    st.session_state.quick_query = query
+                    st.rerun()
+            
+            st.markdown("**📈 Individual Stocks:**")
+            stock_queries = [
+                "Tell me about my Apple holdings",
+                "How is Tesla performing in my portfolio?",
+                "Should I buy more Microsoft?",
+                "What's happening with my Indian stocks?",
+                "Which tech stock should I focus on?"
+            ]
+            
+            for query in stock_queries:
+                if st.button(query, key=f"stock_{hash(query)}", use_container_width=True):
+                    st.session_state.quick_query = query
+                    st.rerun()
+        
+        with col2:
+            st.markdown("**⚠️ Risk Analysis:**")
+            risk_queries = [
+                "What's my risk exposure analysis?",
+                "Is my Asia tech exposure too high?",
+                "Show me portfolio risk metrics",
+                "What's my portfolio volatility?",
+                "Analyze my concentration risk"
+            ]
+            
+            for query in risk_queries:
+                if st.button(query, key=f"risk_{hash(query)}", use_container_width=True):
+                    st.session_state.quick_query = query
+                    st.rerun()
+                    
+            st.markdown("**🔮 Market Insights:**")
+            market_queries = [
+                "Give me today's market brief",
+                "What's happening in tech markets?",
+                "Any earnings announcements today?",
+                "Show me market opportunities",
+                "What should I watch out for?"
+            ]
+            
+            for query in market_queries:
+                if st.button(query, key=f"market_{hash(query)}", use_container_width=True):
+                    st.session_state.quick_query = query
+                    st.rerun()
+            
+            st.markdown("**💡 General Analysis:**")
+            general_queries = [
+                "Summarize today's portfolio performance",
+                "What should I focus on today?",
+                "Give me portfolio recommendations",
+                "Show me trending market news",
+                "What are my next actions?"
+            ]
+            
+            for query in general_queries:
+                if st.button(query, key=f"general_{hash(query)}", use_container_width=True):
+                    st.session_state.quick_query = query
+                    st.rerun()
+        
+        st.markdown("---")
+        
+        # Check for quick query from quick queries section
         default_query = ""
         if hasattr(st.session_state, 'quick_query'):
             default_query = st.session_state.quick_query
             del st.session_state.quick_query
         
-        # Text input
+        # Text input section
+        st.markdown("### ✏️ Or Ask Your Own Question")
         user_query = st.text_input(
             "Enter your financial question:",
             value=default_query,
