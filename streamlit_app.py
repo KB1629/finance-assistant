@@ -22,6 +22,7 @@ import pytz
 import yfinance as yf
 import requests
 import logging
+import re
 
 # Simple logging for cloud
 logging.basicConfig(level=logging.INFO)
@@ -46,7 +47,7 @@ def get_time_based_greeting():
         return "Hello"
 
 def get_portfolio_data():
-    """Get realistic portfolio data."""
+    """Get comprehensive 27-stock portfolio data."""
     current_time = datetime.now(pytz.timezone('Asia/Kolkata'))
     
     return {
@@ -60,23 +61,77 @@ def get_portfolio_data():
         "date": current_time.strftime("%Y-%m-%d"),
         "last_updated": current_time.strftime("%H:%M:%S IST"),
         "asia_tech_exposure": 16.8,
+        
+        # Complete 27-stock portfolio
+        "all_holdings": [
+            {"symbol": "AAPL", "name": "Apple Inc.", "value": 18000, "change": 2.1, "weight": 7.4, "sector": "US-Tech"},
+            {"symbol": "MSFT", "name": "Microsoft Corp.", "value": 15000, "change": 1.8, "weight": 6.2, "sector": "US-Tech"},
+            {"symbol": "NVDA", "name": "NVIDIA Corp.", "value": 12000, "change": 3.2, "weight": 5.0, "sector": "US-Tech"},
+            {"symbol": "GOOGL", "name": "Alphabet Inc.", "value": 14000, "change": 0.9, "weight": 5.8, "sector": "US-Tech"},
+            {"symbol": "TSLA", "name": "Tesla Inc.", "value": 10000, "change": -1.2, "weight": 4.1, "sector": "US-Tech"},
+            {"symbol": "AMZN", "name": "Amazon.com Inc.", "value": 9500, "change": 1.5, "weight": 3.9, "sector": "US-Tech"},
+            {"symbol": "META", "name": "Meta Platforms", "value": 8200, "change": 2.8, "weight": 3.4, "sector": "US-Tech"},
+            {"symbol": "NFLX", "name": "Netflix Inc.", "value": 6800, "change": -0.8, "weight": 2.8, "sector": "US-Tech"},
+            {"symbol": "CRM", "name": "Salesforce Inc.", "value": 5900, "change": 1.2, "weight": 2.4, "sector": "US-Tech"},
+            {"symbol": "ADBE", "name": "Adobe Inc.", "value": 5200, "change": 0.7, "weight": 2.1, "sector": "US-Tech"},
+            {"symbol": "ORCL", "name": "Oracle Corp.", "value": 4800, "change": 1.9, "weight": 2.0, "sector": "US-Tech"},
+            {"symbol": "INTC", "name": "Intel Corp.", "value": 4200, "change": -1.5, "weight": 1.7, "sector": "US-Tech"},
+            {"symbol": "AMD", "name": "Advanced Micro Devices", "value": 4000, "change": 2.3, "weight": 1.7, "sector": "US-Tech"},
+            
+            # Asia-Tech Holdings
+            {"symbol": "TSM", "name": "Taiwan Semiconductor", "value": 8500, "change": -0.5, "weight": 3.5, "sector": "Asia-Tech"},
+            {"symbol": "BABA", "name": "Alibaba Group", "value": 7200, "change": -1.8, "weight": 3.0, "sector": "Asia-Tech"},
+            {"symbol": "TCEHY", "name": "Tencent Holdings", "value": 6800, "change": -0.9, "weight": 2.8, "sector": "Asia-Tech"},
+            {"symbol": "ASML", "name": "ASML Holding", "value": 5600, "change": 1.1, "weight": 2.3, "sector": "Asia-Tech"},
+            {"symbol": "TCS.NS", "name": "Tata Consultancy Services", "value": 4200, "change": 0.8, "weight": 1.7, "sector": "Asia-Tech"},
+            {"symbol": "INFOSYS.NS", "name": "Infosys Limited", "value": 3800, "change": 1.2, "weight": 1.6, "sector": "Asia-Tech"},
+            {"symbol": "HDB", "name": "HDFC Bank", "value": 3200, "change": 0.5, "weight": 1.3, "sector": "Asia-Tech"},
+            {"symbol": "WIT", "name": "Wipro Limited", "value": 1365, "change": -0.3, "weight": 0.6, "sector": "Asia-Tech"},
+            
+            # European Holdings  
+            {"symbol": "SAP", "name": "SAP SE", "value": 12000, "change": 0.8, "weight": 5.0, "sector": "Europe"},
+            {"symbol": "ASML", "name": "ASML Holding", "value": 10500, "change": 1.1, "weight": 4.3, "sector": "Europe"},
+            {"symbol": "NESN.SW", "name": "Nestle SA", "value": 8900, "change": 0.3, "weight": 3.7, "sector": "Europe"},
+            {"symbol": "NOVN.SW", "name": "Novartis AG", "value": 7200, "change": -0.2, "weight": 3.0, "sector": "Europe"},
+            {"symbol": "UL", "name": "Unilever PLC", "value": 6800, "change": 0.4, "weight": 2.8, "sector": "Europe"},
+            {"symbol": "MC.PA", "name": "LVMH", "value": 2908, "change": 1.2, "weight": 1.2, "sector": "Europe"},
+            
+            # Other/Emerging Markets
+            {"symbol": "V", "name": "Visa Inc.", "value": 15000, "change": 1.6, "weight": 6.2, "sector": "Other"},
+            {"symbol": "JNJ", "name": "Johnson & Johnson", "value": 8500, "change": 0.9, "weight": 3.5, "sector": "Other"},
+            {"symbol": "PG", "name": "Procter & Gamble", "value": 4469, "change": 0.2, "weight": 1.8, "sector": "Other"}
+        ],
+        
         "top_holdings": [
-            {"symbol": "AAPL", "name": "Apple Inc.", "value": 15000, "change": 2.1, "weight": 6.2},
-            {"symbol": "MSFT", "name": "Microsoft Corp.", "value": 18000, "change": 1.8, "weight": 7.4},
-            {"symbol": "NVDA", "name": "NVIDIA Corp.", "value": 12000, "change": 3.2, "weight": 5.0},
+            {"symbol": "AAPL", "name": "Apple Inc.", "value": 18000, "change": 2.1, "weight": 7.4},
+            {"symbol": "V", "name": "Visa Inc.", "value": 15000, "change": 1.6, "weight": 6.2},
+            {"symbol": "MSFT", "name": "Microsoft Corp.", "value": 15000, "change": 1.8, "weight": 6.2},
             {"symbol": "GOOGL", "name": "Alphabet Inc.", "value": 14000, "change": 0.9, "weight": 5.8},
+            {"symbol": "SAP", "name": "SAP SE", "value": 12000, "change": 0.8, "weight": 5.0},
+            {"symbol": "NVDA", "name": "NVIDIA Corp.", "value": 12000, "change": 3.2, "weight": 5.0},
+            {"symbol": "ASML", "name": "ASML Holding", "value": 10500, "change": 1.1, "weight": 4.3},
             {"symbol": "TSLA", "name": "Tesla Inc.", "value": 10000, "change": -1.2, "weight": 4.1}
         ],
+        
         "regions": [
             {"name": "US-Tech", "value": 125000, "percentage": 51.6, "change": 0.8},
             {"name": "Asia-Tech", "value": 40663, "percentage": 16.8, "change": -0.3},
             {"name": "Europe", "value": 48408, "percentage": 20.0, "change": 0.4},
             {"name": "Other", "value": 27969, "percentage": 11.6, "change": 0.1}
-        ]
+        ],
+        
+        "performance_metrics": {
+            "sharpe_ratio": 1.85,
+            "max_drawdown": -8.2,
+            "ytd_return": 12.4,
+            "volatility": 15.8,
+            "beta": 1.12,
+            "alpha": 2.8
+        }
     }
 
 def ai_query_processor(query):
-    """Process queries with Gemini AI - cloud optimized."""
+    """Process queries with Gemini AI - cloud optimized with full portfolio context."""
     try:
         import google.generativeai as genai
         
@@ -96,31 +151,61 @@ def ai_query_processor(query):
         portfolio = get_portfolio_data()
         greeting = get_time_based_greeting()
         
-        prompt = f"""{greeting}! I'm your AI financial advisor.
+        # Enhanced portfolio context with all holdings
+        all_holdings_context = ""
+        for holding in portfolio['all_holdings'][:10]:  # Top 10 for context
+            all_holdings_context += f"- {holding['symbol']} ({holding['name']}): ${holding['value']:,} ({holding['weight']:.1f}%, {holding['change']:+.1f}%)\n"
+        
+        # Sector breakdown
+        sectors_context = ""
+        for region in portfolio['regions']:
+            sectors_context += f"- {region['name']}: ${region['value']:,} ({region['percentage']:.1f}%, {region['change']:+.1f}%)\n"
+        
+        prompt = f"""{greeting}! I'm your comprehensive AI financial advisor.
 
-PORTFOLIO CONTEXT:
+COMPLETE PORTFOLIO CONTEXT:
+📊 Portfolio Overview:
 - Total Value: ${portfolio['total_value']:,}
-- Positions: {portfolio['positions_count']} stocks  
+- Total Holdings: {portfolio['positions_count']} stocks
+- Cost Basis: ${portfolio['cost_basis']:,}
+- Unrealized P&L: ${portfolio['total_gain_loss']:,} ({portfolio['total_gain_loss_percent']:+.2f}%)
 - Today's Performance: ${portfolio['daily_change']:+,} ({portfolio['daily_change_percent']:+.2f}%)
-- Total P&L: ${portfolio['total_gain_loss']:,} ({portfolio['total_gain_loss_percent']:+.2f}%)
-- Asia-Tech Exposure: {portfolio['asia_tech_exposure']}%
 
-USER QUERY: {query}
+🏆 Top Holdings:
+{all_holdings_context}
 
-Provide professional financial analysis including:
-1. Direct answer to the query
-2. Portfolio-specific insights when relevant
-3. Market context and recommendations
-4. Risk assessment if applicable
+🌍 Regional Allocation:
+{sectors_context}
 
-Keep response concise but comprehensive."""
+⚠️ Risk Factors:
+- Asia-Tech Exposure: {portfolio['asia_tech_exposure']}% (High Risk Alert)
+- Geographic Diversification: 4 regions
+- Top Holdings Concentration: {sum([h['weight'] for h in portfolio['top_holdings']]):.1f}%
+
+📈 Performance Metrics:
+- Sharpe Ratio: {portfolio.get('performance_metrics', {}).get('sharpe_ratio', 'N/A')}
+- Volatility: {portfolio.get('performance_metrics', {}).get('volatility', 'N/A')}%
+- YTD Return: {portfolio.get('performance_metrics', {}).get('ytd_return', 'N/A')}%
+
+USER QUERY: "{query}"
+
+INSTRUCTIONS:
+As a professional financial advisor, provide a comprehensive response that:
+1. Directly answers the user's question
+2. Uses specific data from the portfolio context above
+3. Provides actionable insights and recommendations
+4. Highlights any relevant risks or opportunities
+5. References specific holdings when relevant
+6. Maintains a professional but friendly tone
+
+Focus on being data-driven and specific rather than generic advice."""
         
         response = model.generate_content(prompt)
         return response.text
         
     except Exception as e:
         logger.error(f"AI processing error: {e}")
-        return f"🚫 AI analysis temporarily unavailable: {str(e)}"
+        return f"🚫 AI analysis temporarily unavailable. Please try again or contact support. Error: {str(e)}"
 
 def create_welcome_message():
     """Create comprehensive welcome message."""
@@ -257,28 +342,36 @@ def display_welcome():
                     st.plotly_chart(fig_bar, use_container_width=True)
     
     with col2:
-        if st.button("🔊 Voice Synthesis"):
+        if st.button("🔊 Speak Welcome Briefing", type="secondary"):
             try:
                 import edge_tts
                 import asyncio
                 import tempfile
+                import base64
                 
-                async def generate_audio():
-                    communicate = edge_tts.Communicate(welcome_text, "en-US-JennyNeural")
-                    audio_data = b""
-                    async for chunk in communicate.stream():
-                        if chunk["type"] == "audio":
-                            audio_data += chunk["data"]
-                    return audio_data
+                # Clean welcome message for voice
+                clean_message = clean_text_for_voice(welcome_text)
                 
-                with st.spinner("🗣️ Generating audio..."):
-                    audio_data = asyncio.run(generate_audio())
-                    if audio_data:
-                        st.audio(audio_data, format="audio/mp3")
-                        st.success("✅ Audio generated successfully!")
-                    else:
-                        st.warning("🚫 Audio generation failed")
-                        
+                async def generate_speech():
+                    voice = "en-US-AriaNeural"  # Female voice
+                    communicate = edge_tts.Communicate(clean_message, voice)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                        async for chunk in communicate.stream():
+                            if chunk["type"] == "audio":
+                                tmp_file.write(chunk["data"])
+                        return tmp_file.name
+                
+                # Generate audio
+                audio_file = asyncio.run(generate_speech())
+                
+                if audio_file:
+                    with open(audio_file, "rb") as f:
+                        audio_data = f.read()
+                    st.audio(audio_data, format="audio/mp3")
+                    st.success("✅ Audio generated successfully!")
+                else:
+                    st.warning("🚫 Audio generation failed")
+                    
             except ImportError:
                 st.info("🔊 Voice synthesis requires Edge TTS package")
             except Exception as e:
@@ -308,18 +401,120 @@ def display_sidebar():
         st.markdown("---")
         
         # Market quick links
-        st.subheader("🔗 Quick Actions")
+        st.subheader("🔗 Quick Portfolio Queries")
         
-        quick_queries = [
+        # Organize queries by category
+        st.markdown("**📊 Performance Analysis:**")
+        performance_queries = [
             "What's my portfolio performance today?",
-            "Show me Asia tech exposure analysis", 
-            "Give me a market brief",
-            "What's my risk exposure?"
+            "Show me my total gains and losses",
+            "How is my portfolio performing this week?",
+            "What's my best performing stock today?",
+            "Which stocks are underperforming?"
         ]
         
-        for query in quick_queries:
-            if st.button(query, key=f"quick_{query[:20]}"):
+        for query in performance_queries:
+            if st.button(query, key=f"perf_{hash(query)}"):
                 st.session_state.quick_query = query
+        
+        st.markdown("**🌏 Regional & Sector Analysis:**")
+        regional_queries = [
+            "Show me Asia tech exposure analysis",
+            "What's my US tech allocation?", 
+            "How is my European portfolio doing?",
+            "Analyze my regional diversification",
+            "Which region is performing best?"
+        ]
+        
+        for query in regional_queries:
+            if st.button(query, key=f"regional_{hash(query)}"):
+                st.session_state.quick_query = query
+        
+        st.markdown("**⚠️ Risk Analysis:**")
+        risk_queries = [
+            "What's my risk exposure analysis?",
+            "Is my Asia tech exposure too high?",
+            "Show me portfolio risk metrics",
+            "What's my portfolio volatility?",
+            "Analyze my concentration risk"
+        ]
+        
+        for query in risk_queries:
+            if st.button(query, key=f"risk_{hash(query)}"):
+                st.session_state.quick_query = query
+        
+        st.markdown("**📈 Individual Stocks:**")
+        stock_queries = [
+            "Tell me about my Apple holdings",
+            "How is Tesla performing in my portfolio?",
+            "Should I buy more Microsoft?",
+            "What's happening with my Indian stocks?",
+            "Which tech stock should I focus on?"
+        ]
+        
+        for query in stock_queries:
+            if st.button(query, key=f"stock_{hash(query)}"):
+                st.session_state.quick_query = query
+                
+        st.markdown("**🔮 Market Insights:**")
+        market_queries = [
+            "Give me today's market brief",
+            "What's happening in tech markets?",
+            "Any earnings announcements today?",
+            "Show me market opportunities",
+            "What should I watch out for?"
+        ]
+        
+        for query in market_queries:
+            if st.button(query, key=f"market_{hash(query)}"):
+                st.session_state.quick_query = query
+
+def clean_text_for_voice(text):
+    """Clean text for voice synthesis by removing emojis and special characters."""
+    # Remove emojis
+    emoji_pattern = re.compile("["
+        u"\U0001F600-\U0001F64F"  # emoticons
+        u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+        u"\U0001F680-\U0001F6FF"  # transport & map symbols
+        u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        u"\U00002500-\U00002BEF"  # chinese char
+        u"\U00002702-\U000027B0"
+        u"\U00002702-\U000027B0"
+        u"\U000024C2-\U0001F251"
+        u"\U0001f926-\U0001f937"
+        u"\U00010000-\U0010ffff"
+        u"\u2640-\u2642" 
+        u"\u2600-\u2B55"
+        u"\u200d"
+        u"\u23cf"
+        u"\u23e9"
+        u"\u231a"
+        u"\ufe0f"  # dingbats
+        u"\u3030"
+        "]+", flags=re.UNICODE)
+    
+    # Clean the text
+    clean_text = emoji_pattern.sub(r'', text)
+    
+    # Remove special markdown characters
+    clean_text = re.sub(r'\*\*', '', clean_text)  # Remove bold markdown
+    clean_text = re.sub(r'\*', '', clean_text)    # Remove italics
+    clean_text = re.sub(r'#', '', clean_text)     # Remove headers
+    clean_text = re.sub(r'`', '', clean_text)     # Remove code blocks
+    clean_text = re.sub(r'\[', '', clean_text)    # Remove brackets
+    clean_text = re.sub(r'\]', '', clean_text)    
+    clean_text = re.sub(r'\(', '', clean_text)    # Remove parentheses for cleaner speech
+    clean_text = re.sub(r'\)', '', clean_text)
+    
+    # Replace currency symbols with words
+    clean_text = re.sub(r'\$', 'dollars ', clean_text)
+    clean_text = re.sub(r'%', ' percent', clean_text)
+    clean_text = re.sub(r'&', ' and ', clean_text)
+    
+    # Clean up extra whitespace
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+    
+    return clean_text
 
 def main():
     """Main application function."""
@@ -422,8 +617,19 @@ def main():
         
         portfolio = get_portfolio_data()
         
+        # Portfolio overview metrics
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Holdings", f"{portfolio['positions_count']} stocks")
+        with col2:
+            st.metric("Portfolio Value", f"${portfolio['total_value']:,}")
+        with col3:
+            st.metric("Unrealized P&L", f"${portfolio['total_gain_loss']:,}", f"{portfolio['total_gain_loss_percent']:+.2f}%")
+        with col4:
+            st.metric("Cost Basis", f"${portfolio['cost_basis']:,}")
+        
         # Top holdings
-        st.subheader("🏆 Top Holdings")
+        st.subheader("🏆 Top 8 Holdings")
         holdings_df = pd.DataFrame(portfolio['top_holdings'])
         holdings_df['Value'] = holdings_df['value'].apply(lambda x: f"${x:,}")
         holdings_df['Weight'] = holdings_df['weight'].apply(lambda x: f"{x:.1f}%")
@@ -439,8 +645,53 @@ def main():
         
         st.dataframe(display_holdings, use_container_width=True)
         
+        # Complete holdings by sector
+        st.subheader("📋 Complete Holdings by Sector")
+        
+        # Get all holdings and organize by sector
+        all_holdings = portfolio['all_holdings']
+        
+        # Group by sector
+        sectors = {}
+        for holding in all_holdings:
+            sector = holding['sector']
+            if sector not in sectors:
+                sectors[sector] = []
+            sectors[sector].append(holding)
+        
+        # Display each sector
+        for sector_name, sector_holdings in sectors.items():
+            with st.expander(f"🏢 {sector_name} ({len(sector_holdings)} holdings)", expanded=False):
+                sector_df = pd.DataFrame(sector_holdings)
+                sector_df['Value'] = sector_df['value'].apply(lambda x: f"${x:,}")
+                sector_df['Weight'] = sector_df['weight'].apply(lambda x: f"{x:.1f}%")
+                sector_df['Change'] = sector_df['change'].apply(lambda x: f"{x:+.1f}%")
+                
+                display_sector = sector_df[['symbol', 'name', 'Value', 'Weight', 'Change']].rename(columns={
+                    'symbol': 'Symbol',
+                    'name': 'Company Name', 
+                    'Value': 'Market Value',
+                    'Weight': 'Portfolio Weight',
+                    'Change': 'Daily Change'
+                })
+                
+                st.dataframe(display_sector, use_container_width=True)
+                
+                # Sector summary
+                sector_total_value = sum([h['value'] for h in sector_holdings])
+                sector_total_weight = sum([h['weight'] for h in sector_holdings])
+                sector_avg_change = sum([h['change'] for h in sector_holdings]) / len(sector_holdings)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Sector Value", f"${sector_total_value:,}")
+                with col2:
+                    st.metric("Sector Weight", f"{sector_total_weight:.1f}%")
+                with col3:
+                    st.metric("Avg Daily Change", f"{sector_avg_change:+.1f}%")
+        
         # Portfolio summary
-        st.subheader("📋 Portfolio Summary")
+        st.subheader("📋 Portfolio Analysis")
         col1, col2 = st.columns(2)
         
         with col1:
@@ -450,16 +701,47 @@ def main():
             - **Total Value:** ${portfolio['total_value']:,}
             - **Cost Basis:** ${portfolio['cost_basis']:,}
             - **Unrealized P&L:** ${portfolio['total_gain_loss']:,} ({portfolio['total_gain_loss_percent']:+.2f}%)
+            - **Daily Change:** ${portfolio['daily_change']:+,} ({portfolio['daily_change_percent']:+.2f}%)
             """)
         
         with col2:
-            st.markdown(f"""
-            **Risk Analysis:**
-            - **Asia-Tech Exposure:** {portfolio['asia_tech_exposure']}% (High Risk)
-            - **Geographic Diversification:** 4 regions
-            - **Top 5 Concentration:** {sum([h['weight'] for h in portfolio['top_holdings']]):.1f}%
-            - **Daily Volatility:** {abs(portfolio['daily_change_percent']):.2f}%
-            """)
+            if 'performance_metrics' in portfolio:
+                metrics = portfolio['performance_metrics']
+                st.markdown(f"""
+                **Risk & Performance Metrics:**
+                - **Sharpe Ratio:** {metrics['sharpe_ratio']:.2f}
+                - **Max Drawdown:** {metrics['max_drawdown']:.1f}%
+                - **YTD Return:** {metrics['ytd_return']:.1f}%
+                - **Volatility:** {metrics['volatility']:.1f}%
+                - **Beta:** {metrics['beta']:.2f}
+                - **Alpha:** {metrics['alpha']:.1f}%
+                """)
+            else:
+                st.markdown(f"""
+                **Risk Analysis:**
+                - **Asia-Tech Exposure:** {portfolio['asia_tech_exposure']}% (High Risk)
+                - **Geographic Diversification:** 4 regions
+                - **Top 8 Concentration:** {sum([h['weight'] for h in portfolio['top_holdings']]):.1f}%
+                - **Daily Volatility:** {abs(portfolio['daily_change_percent']):.2f}%
+                """)
+        
+        # Sector allocation summary
+        st.subheader("🥧 Sector Allocation Summary")
+        sector_summary = []
+        for sector_name, sector_holdings in sectors.items():
+            sector_total_value = sum([h['value'] for h in sector_holdings])
+            sector_total_weight = sum([h['weight'] for h in sector_holdings])
+            sector_avg_change = sum([h['change'] for h in sector_holdings]) / len(sector_holdings)
+            sector_summary.append({
+                'Sector': sector_name,
+                'Holdings': len(sector_holdings),
+                'Value': f"${sector_total_value:,}",
+                'Weight': f"{sector_total_weight:.1f}%",
+                'Avg Change': f"{sector_avg_change:+.1f}%"
+            })
+        
+        sector_summary_df = pd.DataFrame(sector_summary)
+        st.dataframe(sector_summary_df, use_container_width=True)
 
     # Footer
     st.markdown("---")
