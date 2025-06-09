@@ -1,5 +1,5 @@
 
-click this link to direct to hosted website :   https://finance-assistant-9mgtxk3xtsrjfhr4mignsv.streamlit.app/
+click this link to direct to the hosted website :   https://finance-assistant-9mgtxk3xtsrjfhr4mignsv.streamlit.app/
 
 
 ---
