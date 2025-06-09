@@ -3,11 +3,7 @@ click this link to direct to the hosted website :   https://finance-assistant-9m
 
 
 ---
-title: Finance Assistant
-emoji: 💰
-colorFrom: blue
-colorTo: green
-sdk: streamlit
+Finance Assistant
 ---
 
 # 🎤💰 Voice-Enabled Finance Assistant
