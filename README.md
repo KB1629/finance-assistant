@@ -1,3 +1,7 @@
+
+click this link to direct to hosted website :   https://finance-assistant-9mgtxk3xtsrjfhr4mignsv.streamlit.app/
+
+
 ---
 title: Finance Assistant
 emoji: 💰
